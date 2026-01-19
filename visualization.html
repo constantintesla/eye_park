@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Визуализация - Eye Park</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            padding: 30px;
+        }
+        
+        .header {
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            display: inline-block;
+            margin-right: 10px;
+            transition: all 0.3s;
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn:hover {
+            background: #5568d3;
+        }
+        
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .chart-container {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .chart-container h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .video-container {
+            margin-top: 30px;
+            text-align: center;
+        }
+        
+        .video-container video {
+            max-width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .info-panel {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        
+        .info-panel h3 {
+            margin-bottom: 15px;
+            color: #1976d2;
+        }
+        
+        .info-panel p {
+            margin-bottom: 10px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Визуализация результатов анализа</h1>
+            <a href="/" class="btn">На главную</a>
+            <a href="/results" class="btn">Все результаты</a>
+        </div>
+        
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Загрузка данных визуализации...</p>
+        </div>
+        
+        <div id="content" style="display: none;">
+            <div class="info-panel" id="infoPanel">
+                <!-- Информация будет загружена динамически -->
+            </div>
+            
+            <div class="charts-grid">
+                <div class="chart-container">
+                    <h3>Траектория движения глаз</h3>
+                    <canvas id="eyeTrajectoryChart"></canvas>
+                </div>
+                
+                <div class="chart-container">
+                    <h3>Частота моргания</h3>
+                    <canvas id="blinkRateChart"></canvas>
+                </div>
+                
+                <div class="chart-container">
+                    <h3>Амплитуда саккад</h3>
+                    <canvas id="saccadeChart"></canvas>
+                </div>
+                
+                <div class="chart-container">
+                    <h3>Стабильность фиксаций</h3>
+                    <canvas id="fixationChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="video-container">
+                <h3>Исходное видео</h3>
+                <video id="videoPlayer" controls>
+                    Ваш браузер не поддерживает видео.
+                </video>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Получение индекса из URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const pathParts = window.location.pathname.split('/');
+        const index = pathParts[pathParts.length - 1] || urlParams.get('index') || 0;
+        
+        let charts = {};
+        
+        async function loadVisualizationData() {
+            try {
+                const response = await fetch(`/api/visualization/${index}`);
+                const data = await response.json();
+                
+                // Загрузка информации о результате
+                const resultResponse = await fetch(`/api/results/${index}`);
+                const result = await resultResponse.json();
+                
+                // Отображение информации
+                displayInfo(result);
+                
+                // Создание графиков
+                createCharts(data, result);
+                
+                // Загрузка видео
+                if (data.video_url) {
+                    document.getElementById('videoPlayer').src = data.video_url;
+                }
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+            } catch (error) {
+                document.getElementById('loading').innerHTML = `
+                    <p style="color: red;">Ошибка загрузки данных: ${error.message}</p>
+                `;
+            }
+        }
+        
+        function displayInfo(result) {
+            const infoPanel = document.getElementById('infoPanel');
+            infoPanel.innerHTML = `
+                <h3>Информация о результате #${index}</h3>
+                <p><strong>Файл:</strong> ${result.filename}</p>
+                <p><strong>Дата:</strong> ${new Date(result.timestamp).toLocaleString('ru-RU')}</p>
+                <p><strong>EMSI Score:</strong> ${result.emsi.emsi_score.toFixed(2)} (${result.emsi.emsi_range})</p>
+                <p><strong>Уровень риска:</strong> ${result.risk_level} (${(result.risk_probability * 100).toFixed(1)}%)</p>
+            `;
+        }
+        
+        function createCharts(data, result) {
+            const features = result.features;
+            
+            // График траектории движения глаз
+            if (data.eye_trajectory && data.eye_trajectory.time.length > 0) {
+                charts.trajectory = new Chart(document.getElementById('eyeTrajectoryChart'), {
+                    type: 'line',
+                    data: {
+                        labels: data.eye_trajectory.time.map(t => t.toFixed(2)),
+                        datasets: [{
+                            label: 'Горизонтальная позиция',
+                            data: data.eye_trajectory.x,
+                            borderColor: 'rgb(102, 126, 234)',
+                            tension: 0.1
+                        }, {
+                            label: 'Вертикальная позиция',
+                            data: data.eye_trajectory.y,
+                            borderColor: 'rgb(118, 75, 162)',
+                            tension: 0.1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            } else {
+                document.getElementById('eyeTrajectoryChart').parentElement.innerHTML = 
+                    '<p>Данные траектории недоступны</p>';
+            }
+            
+            // График частоты моргания
+            const blinkRate = features.blink_rate || 0;
+            charts.blink = new Chart(document.getElementById('blinkRateChart'), {
+                type: 'bar',
+                data: {
+                    labels: ['Частота моргания'],
+                    datasets: [{
+                        label: 'Морганий/мин',
+                        data: [blinkRate],
+                        backgroundColor: 'rgba(102, 126, 234, 0.6)',
+                        borderColor: 'rgb(102, 126, 234)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Морганий в минуту'
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // График амплитуды саккад
+            const saccadeFreq = features.saccade_frequency || 0;
+            charts.saccade = new Chart(document.getElementById('saccadeChart'), {
+                type: 'bar',
+                data: {
+                    labels: ['Частота саккад'],
+                    datasets: [{
+                        label: 'Саккад/сек',
+                        data: [saccadeFreq],
+                        backgroundColor: 'rgba(118, 75, 162, 0.6)',
+                        borderColor: 'rgb(118, 75, 162)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Саккад в секунду'
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // График стабильности фиксаций
+            const fixationStab = features.fixation_stability || 0;
+            charts.fixation = new Chart(document.getElementById('fixationChart'), {
+                type: 'bar',
+                data: {
+                    labels: ['Стабильность фиксаций'],
+                    datasets: [{
+                        label: 'Градусы',
+                        data: [fixationStab],
+                        backgroundColor: 'rgba(255, 152, 0, 0.6)',
+                        borderColor: 'rgb(255, 152, 0)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Градусы'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Загрузка при старте
+        loadVisualizationData();
+    </script>
+</body>
+</html>

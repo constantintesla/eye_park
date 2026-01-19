@@ -1,0 +1,39 @@
+# Виртуальное окружение
+venv/
+.venv/
+
+# Кэш Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Логи
+*.log
+logs/
+
+# Артефакты IDE
+.vscode/
+.idea/
+*.iml
+
+# Секреты и окружение
+.env
+.env.*
+!*.env.example
+
+# Результаты и временные файлы
+results/
+results.json
+uploads/
+temp/
+models/
+
+# Кеши инструментов
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Docker
+*.pid
+

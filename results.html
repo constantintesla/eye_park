@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Все результаты - Eye Park</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            display: inline-block;
+            margin-right: 10px;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+        
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        
+        .result-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .result-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        
+        .result-card h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        .result-card .info {
+            margin-bottom: 10px;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .result-card .info strong {
+            color: #333;
+        }
+        
+        .risk-badge {
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+            margin-top: 10px;
+        }
+        
+        .risk-low {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        .risk-medium {
+            background: #FF9800;
+            color: white;
+        }
+        
+        .risk-high {
+            background: #f44336;
+            color: white;
+        }
+        
+        .actions {
+            margin-top: 15px;
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-small {
+            padding: 8px 15px;
+            font-size: 12px;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+            font-size: 18px;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            background: white;
+            border-radius: 10px;
+            color: #666;
+        }
+        
+        .empty-state h2 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Все результаты анализа</h1>
+            <a href="/" class="btn btn-primary">На главную</a>
+            <button class="btn btn-primary" onclick="loadResults()">Обновить</button>
+        </div>
+        
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Загрузка результатов...</p>
+        </div>
+        
+        <div id="resultsContainer">
+            <!-- Результаты будут загружены динамически -->
+        </div>
+    </div>
+    
+    <script>
+        async function loadResults() {
+            const container = document.getElementById('resultsContainer');
+            const loading = document.getElementById('loading');
+            
+            loading.style.display = 'block';
+            container.innerHTML = '';
+            
+            try {
+                const response = await fetch('/api/results');
+                const results = await response.json();
+                
+                loading.style.display = 'none';
+                
+                if (results.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <h2>Нет результатов</h2>
+                            <p>Загрузите видео для анализа на главной странице</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                const grid = document.createElement('div');
+                grid.className = 'results-grid';
+                
+                results.reverse().forEach((result, index) => {
+                    const actualIndex = results.length - 1 - index;
+                    const riskClass = `risk-${result.risk_level.toLowerCase()}`;
+                    const date = new Date(result.timestamp).toLocaleString('ru-RU');
+                    
+                    const card = document.createElement('div');
+                    card.className = 'result-card';
+                    card.innerHTML = `
+                        <h3>Результат #${actualIndex}</h3>
+                        <div class="info"><strong>Файл:</strong> ${result.filename}</div>
+                        <div class="info"><strong>Дата:</strong> ${date}</div>
+                        <div class="info"><strong>EMSI:</strong> ${result.emsi_score.toFixed(2)}</div>
+                        <div class="info"><strong>Диапазон:</strong> ${result.emsi_range}</div>
+                        <div class="info"><strong>Вероятность:</strong> ${(result.risk_probability * 100).toFixed(1)}%</div>
+                        <span class="risk-badge ${riskClass}">${result.risk_level}</span>
+                        <div class="actions">
+                            <button class="btn btn-primary btn-small" onclick="viewDetail(${actualIndex})">
+                                Детали
+                            </button>
+                            <button class="btn btn-primary btn-small" onclick="viewVisualization(${actualIndex})">
+                                Визуализация
+                            </button>
+                        </div>
+                    `;
+                    grid.appendChild(card);
+                });
+                
+                container.appendChild(grid);
+            } catch (error) {
+                loading.style.display = 'none';
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h2>Ошибка загрузки</h2>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function viewDetail(index) {
+            window.location.href = `/?detail=${index}`;
+        }
+        
+        function viewVisualization(index) {
+            window.location.href = `/visualization/${index}`;
+        }
+        
+        // Загрузка при старте
+        loadResults();
+    </script>
+</body>
+</html>

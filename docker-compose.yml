@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  api:
+    build: .
+    container_name: eye_park_api
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./results.json:/app/results.json
+      - ./results:/app/results
+      - ./uploads:/app/uploads
+    environment:
+      - FLASK_ENV=development
+      - DEBUG=True
+      - API_PORT=5000
+    command: python start_api.py
+    restart: unless-stopped
+
+  bot:
+    build: .
+    container_name: eye_park_bot
+    volumes:
+      - ./results.json:/app/results.json
+      - ./results:/app/results
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - API_URL=http://api:5000
+    command: python start_bot.py
+    depends_on:
+      - api
+    restart: unless-stopped
