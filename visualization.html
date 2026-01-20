@@ -143,9 +143,19 @@
             </div>
             
             <div class="charts-grid">
-                <div class="chart-container">
-                    <h3>Траектория движения глаз</h3>
+                <div class="chart-container" style="grid-column: 1 / -1;">
+                    <h3>Траектория движения глаз (горизонтальная и вертикальная)</h3>
                     <canvas id="eyeTrajectoryChart"></canvas>
+                </div>
+                
+                <div class="chart-container" style="grid-column: 1 / -1;">
+                    <h3>Траектория движения глаз (2D вид сверху)</h3>
+                    <canvas id="eyeTrajectory2DChart"></canvas>
+                </div>
+                
+                <div class="chart-container">
+                    <h3>Высота глаз (моргание)</h3>
+                    <canvas id="eyeHeightChart"></canvas>
                 </div>
                 
                 <div class="chart-container">
@@ -154,13 +164,23 @@
                 </div>
                 
                 <div class="chart-container">
-                    <h3>Амплитуда саккад</h3>
+                    <h3>Движения глаз (саккады и фиксации)</h3>
                     <canvas id="saccadeChart"></canvas>
                 </div>
                 
                 <div class="chart-container">
                     <h3>Стабильность фиксаций</h3>
                     <canvas id="fixationChart"></canvas>
+                </div>
+                
+                <div class="chart-container">
+                    <h3>Сравнение основных параметров</h3>
+                    <canvas id="parametersChart"></canvas>
+                </div>
+                
+                <div class="chart-container">
+                    <h3>Распределение параметров мимики</h3>
+                    <canvas id="facialChart"></canvas>
                 </div>
             </div>
             
@@ -224,29 +244,100 @@
         function createCharts(data, result) {
             const features = result.features;
             
-            // График траектории движения глаз
+            // График траектории движения глаз (временные ряды)
             if (data.eye_trajectory && data.eye_trajectory.time.length > 0) {
+                const maxTime = Math.max(...data.eye_trajectory.time);
+                const timeLabels = data.eye_trajectory.time.map(t => (t / maxTime * 100).toFixed(1) + '%');
+                
                 charts.trajectory = new Chart(document.getElementById('eyeTrajectoryChart'), {
                     type: 'line',
                     data: {
-                        labels: data.eye_trajectory.time.map(t => t.toFixed(2)),
+                        labels: timeLabels,
                         datasets: [{
-                            label: 'Горизонтальная позиция',
+                            label: 'Горизонтальная позиция (X)',
                             data: data.eye_trajectory.x,
                             borderColor: 'rgb(102, 126, 234)',
-                            tension: 0.1
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            tension: 0.3,
+                            fill: false
                         }, {
-                            label: 'Вертикальная позиция',
+                            label: 'Вертикальная позиция (Y)',
                             data: data.eye_trajectory.y,
                             borderColor: 'rgb(118, 75, 162)',
-                            tension: 0.1
+                            backgroundColor: 'rgba(118, 75, 162, 0.1)',
+                            tension: 0.3,
+                            fill: false
                         }]
                     },
                     options: {
                         responsive: true,
+                        interaction: {
+                            intersect: false,
+                            mode: 'index'
+                        },
+                        plugins: {
+                            legend: {
+                                display: true
+                            },
+                            title: {
+                                display: true,
+                                text: 'Позиция глаз во времени (пиксели)'
+                            }
+                        },
                         scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Время (нормализовано)'
+                                }
+                            },
                             y: {
-                                beginAtZero: true
+                                title: {
+                                    display: true,
+                                    text: 'Позиция (пиксели)'
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                // График траектории движения глаз (2D вид)
+                charts.trajectory2D = new Chart(document.getElementById('eyeTrajectory2DChart'), {
+                    type: 'scatter',
+                    data: {
+                        datasets: [{
+                            label: 'Траектория движения глаз',
+                            data: data.eye_trajectory.x.map((x, i) => ({x: x, y: data.eye_trajectory.y[i]})),
+                            borderColor: 'rgb(102, 126, 234)',
+                            backgroundColor: 'rgba(102, 126, 234, 0.5)',
+                            pointRadius: 2,
+                            pointHoverRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                display: true
+                            },
+                            title: {
+                                display: true,
+                                text: 'Траектория движения глаз (X-Y плоскость)'
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: {
+                                    display: true,
+                                    text: 'Горизонтальная позиция (пиксели)'
+                                }
+                            },
+                            y: {
+                                title: {
+                                    display: true,
+                                    text: 'Вертикальная позиция (пиксели)'
+                                },
+                                reverse: true
                             }
                         }
                     }
@@ -256,22 +347,77 @@
                     '<p>Данные траектории недоступны</p>';
             }
             
+            // График высоты глаз (моргание)
+            if (data.blink_data && data.blink_data.eye_heights && data.blink_data.eye_heights.time.length > 0) {
+                charts.eyeHeight = new Chart(document.getElementById('eyeHeightChart'), {
+                    type: 'line',
+                    data: {
+                        labels: data.blink_data.eye_heights.time.map(t => t.toFixed(2)),
+                        datasets: [{
+                            label: 'Левый глаз',
+                            data: data.blink_data.eye_heights.left,
+                            borderColor: 'rgb(76, 175, 80)',
+                            backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                            tension: 0.3
+                        }, {
+                            label: 'Правый глаз',
+                            data: data.blink_data.eye_heights.right,
+                            borderColor: 'rgb(244, 67, 54)',
+                            backgroundColor: 'rgba(244, 67, 54, 0.1)',
+                            tension: 0.3
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Высота глаз во времени (моргания)'
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Высота (пиксели)'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
             // График частоты моргания
             const blinkRate = features.blink_rate || 0;
+            const normalBlinkRate = 17.5; // Норма 15-20
             charts.blink = new Chart(document.getElementById('blinkRateChart'), {
                 type: 'bar',
                 data: {
                     labels: ['Частота моргания'],
                     datasets: [{
-                        label: 'Морганий/мин',
+                        label: 'Измерено (морганий/мин)',
                         data: [blinkRate],
                         backgroundColor: 'rgba(102, 126, 234, 0.6)',
                         borderColor: 'rgb(102, 126, 234)',
-                        borderWidth: 1
+                        borderWidth: 2
+                    }, {
+                        label: 'Норма (15-20)',
+                        data: [normalBlinkRate],
+                        backgroundColor: 'rgba(76, 175, 80, 0.4)',
+                        borderColor: 'rgb(76, 175, 80)',
+                        borderWidth: 2,
+                        borderDash: [5, 5]
                     }]
                 },
                 options: {
                     responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Частота моргания'
+                        }
+                    },
                     scales: {
                         y: {
                             beginAtZero: true,
@@ -284,28 +430,48 @@
                 }
             });
             
-            // График амплитуды саккад
+            // График движений глаз (саккады и фиксации)
             const saccadeFreq = features.saccade_frequency || 0;
+            const normalSaccadeFreq = 3.0; // Норма 2-4
             charts.saccade = new Chart(document.getElementById('saccadeChart'), {
                 type: 'bar',
                 data: {
-                    labels: ['Частота саккад'],
+                    labels: ['Частота саккад', 'Стабильность фиксаций'],
                     datasets: [{
-                        label: 'Саккад/сек',
-                        data: [saccadeFreq],
-                        backgroundColor: 'rgba(118, 75, 162, 0.6)',
-                        borderColor: 'rgb(118, 75, 162)',
-                        borderWidth: 1
+                        label: 'Измерено',
+                        data: [saccadeFreq, features.fixation_stability || 0],
+                        backgroundColor: [
+                            'rgba(118, 75, 162, 0.6)',
+                            'rgba(255, 152, 0, 0.6)'
+                        ],
+                        borderColor: [
+                            'rgb(118, 75, 162)',
+                            'rgb(255, 152, 0)'
+                        ],
+                        borderWidth: 2
+                    }, {
+                        label: 'Норма (для саккад)',
+                        data: [normalSaccadeFreq, null],
+                        backgroundColor: 'rgba(76, 175, 80, 0.4)',
+                        borderColor: 'rgb(76, 175, 80)',
+                        borderWidth: 2,
+                        borderDash: [5, 5]
                     }]
                 },
                 options: {
                     responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Движения глаз: саккады и фиксации'
+                        }
+                    },
                     scales: {
                         y: {
                             beginAtZero: true,
                             title: {
                                 display: true,
-                                text: 'Саккад в секунду'
+                                text: 'Значение'
                             }
                         }
                     }
@@ -314,26 +480,146 @@
             
             // График стабильности фиксаций
             const fixationStab = features.fixation_stability || 0;
+            const normalFixationStab = 1.0; // Норма <1.0
             charts.fixation = new Chart(document.getElementById('fixationChart'), {
                 type: 'bar',
                 data: {
                     labels: ['Стабильность фиксаций'],
                     datasets: [{
-                        label: 'Градусы',
+                        label: 'Измерено (градусы)',
                         data: [fixationStab],
                         backgroundColor: 'rgba(255, 152, 0, 0.6)',
                         borderColor: 'rgb(255, 152, 0)',
-                        borderWidth: 1
+                        borderWidth: 2
+                    }, {
+                        label: 'Норма (<1.0°)',
+                        data: [normalFixationStab],
+                        backgroundColor: 'rgba(76, 175, 80, 0.4)',
+                        borderColor: 'rgb(76, 175, 80)',
+                        borderWidth: 2,
+                        borderDash: [5, 5]
                     }]
                 },
                 options: {
                     responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Стабильность фиксаций'
+                        }
+                    },
                     scales: {
                         y: {
                             beginAtZero: true,
                             title: {
                                 display: true,
                                 text: 'Градусы'
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // График сравнения основных параметров
+            charts.parameters = new Chart(document.getElementById('parametersChart'), {
+                type: 'radar',
+                data: {
+                    labels: [
+                        'Частота саккад',
+                        'Частота моргания (норм.)',
+                        'Стабильность фиксаций (норм.)',
+                        'Асимметрия (норм.)'
+                    ],
+                    datasets: [{
+                        label: 'Измеренные значения (нормализовано)',
+                        data: [
+                            Math.min(features.saccade_frequency || 0, 5) / 5 * 100,
+                            Math.min(features.blink_rate || 0, 30) / 30 * 100,
+                            Math.max(0, 100 - (features.fixation_stability || 0) * 20),
+                            Math.max(0, 100 - (features.asymmetry_left_right || 0) * 500)
+                        ],
+                        backgroundColor: 'rgba(102, 126, 234, 0.2)',
+                        borderColor: 'rgb(102, 126, 234)',
+                        borderWidth: 2,
+                        pointBackgroundColor: 'rgb(102, 126, 234)'
+                    }, {
+                        label: 'Норма (100%)',
+                        data: [100, 100, 100, 100],
+                        backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                        borderColor: 'rgb(76, 175, 80)',
+                        borderWidth: 1,
+                        borderDash: [5, 5],
+                        pointBackgroundColor: 'rgb(76, 175, 80)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Сравнение основных параметров'
+                        }
+                    },
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 100,
+                            title: {
+                                display: true,
+                                text: 'Нормализованное значение (%)'
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // График параметров мимики
+            charts.facial = new Chart(document.getElementById('facialChart'), {
+                type: 'bar',
+                data: {
+                    labels: [
+                        'Асимметрия (%)',
+                        'Птоз (пикс.)',
+                        'Активность мышц',
+                        'Движение бровей'
+                    ],
+                    datasets: [{
+                        label: 'Значения',
+                        data: [
+                            (features.asymmetry_left_right || 0) * 100,
+                            features.eyelid_droop || 0,
+                            (features.periorbital_muscle_activity || 0) * 100,
+                            (features.eyebrow_movement_range || 0) * 1000
+                        ],
+                        backgroundColor: [
+                            'rgba(244, 67, 54, 0.6)',
+                            'rgba(255, 152, 0, 0.6)',
+                            'rgba(156, 39, 176, 0.6)',
+                            'rgba(0, 188, 212, 0.6)'
+                        ],
+                        borderColor: [
+                            'rgb(244, 67, 54)',
+                            'rgb(255, 152, 0)',
+                            'rgb(156, 39, 176)',
+                            'rgb(0, 188, 212)'
+                        ],
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Параметры мимики'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Значение'
                             }
                         }
                     }

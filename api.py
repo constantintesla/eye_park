@@ -175,36 +175,87 @@ def get_visualization_data(index):
     landmarks_path = os.path.join(data_dir, 'landmarks_data.json')
     blink_path = os.path.join(data_dir, 'blink_analysis.json')
     
+    # Индексы ключевых точек для глаз (MediaPipe Face Mesh)
+    LEFT_EYE_INDICES = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
+    RIGHT_EYE_INDICES = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
+    
     visualization_data = {
-        'eye_trajectory': {'time': [], 'x': [], 'y': []},
-        'blink_data': {'time': [], 'blink_events': [], 'blink_rate': 0.0},
+        'eye_trajectory': {'time': [], 'x': [], 'y': [], 'left_x': [], 'left_y': [], 'right_x': [], 'right_y': []},
+        'blink_data': {'time': [], 'blink_events': [], 'blink_rate': 0.0, 'eye_heights': {'left': [], 'right': [], 'time': []}},
         'saccade_data': {'time': [], 'saccade_events': [], 'saccade_frequency': 0.0},
         'fixation_data': {'time': [], 'fixation_events': [], 'fixation_stability': 0.0},
         'video_url': f'/api/video/{index}'
     }
     
     # Загрузка данных из файлов
+    video_width = result.get('video_summary', {}).get('resolution', [1280, 720])[0]
+    video_height = result.get('video_summary', {}).get('resolution', [1280, 720])[1]
+    
     if os.path.exists(landmarks_path):
         with open(landmarks_path, 'r', encoding='utf-8') as f:
             landmarks_data = json.load(f)
             timestamps = landmarks_data.get('timestamps', [])
+            landmarks_list = landmarks_data.get('landmarks', [])
             
-            # Генерация траектории движения глаз (упрощенная)
-            for i, ts in enumerate(timestamps):
-                visualization_data['eye_trajectory']['time'].append(ts)
-                # Используем средние значения из признаков
-                visualization_data['eye_trajectory']['x'].append(i * 10)  # Упрощенная траектория
-                visualization_data['eye_trajectory']['y'].append(i * 5)
+            # Извлечение траектории движения глаз из ключевых точек
+            for i, (lm_data, ts) in enumerate(zip(landmarks_list, timestamps)):
+                if lm_data and 'landmarks' in lm_data:
+                    lm = lm_data['landmarks']
+                    
+                    # Центр левого глаза
+                    left_x = sum(lm[j]['x'] for j in LEFT_EYE_INDICES if j < len(lm)) / len(LEFT_EYE_INDICES)
+                    left_y = sum(lm[j]['y'] for j in LEFT_EYE_INDICES if j < len(lm)) / len(LEFT_EYE_INDICES)
+                    
+                    # Центр правого глаза
+                    right_x = sum(lm[j]['x'] for j in RIGHT_EYE_INDICES if j < len(lm)) / len(RIGHT_EYE_INDICES)
+                    right_y = sum(lm[j]['y'] for j in RIGHT_EYE_INDICES if j < len(lm)) / len(RIGHT_EYE_INDICES)
+                    
+                    # Средняя позиция (бинокулярный взгляд)
+                    avg_x = (left_x + right_x) / 2
+                    avg_y = (left_y + right_y) / 2
+                    
+                    # Конвертация в пиксели
+                    visualization_data['eye_trajectory']['time'].append(ts)
+                    visualization_data['eye_trajectory']['x'].append(avg_x * video_width)
+                    visualization_data['eye_trajectory']['y'].append(avg_y * video_height)
+                    visualization_data['eye_trajectory']['left_x'].append(left_x * video_width)
+                    visualization_data['eye_trajectory']['left_y'].append(left_y * video_height)
+                    visualization_data['eye_trajectory']['right_x'].append(right_x * video_width)
+                    visualization_data['eye_trajectory']['right_y'].append(right_y * video_height)
+                    
+                    # Вычисление высоты глаз для анализа моргания
+                    if i < len(landmarks_list):
+                        # Упрощенное вычисление высоты глаза (расстояние между верхними и нижними точками)
+                        LEFT_EYE_TOP = [159, 160, 161, 158]
+                        LEFT_EYE_BOTTOM = [145, 153, 154, 155]
+                        RIGHT_EYE_TOP = [386, 387, 388, 385]
+                        RIGHT_EYE_BOTTOM = [374, 380, 381, 382]
+                        
+                        left_top_y = sum(lm[j]['y'] for j in LEFT_EYE_TOP if j < len(lm)) / len(LEFT_EYE_TOP)
+                        left_bottom_y = sum(lm[j]['y'] for j in LEFT_EYE_BOTTOM if j < len(lm)) / len(LEFT_EYE_BOTTOM)
+                        left_height = abs(left_top_y - left_bottom_y) * video_height
+                        
+                        right_top_y = sum(lm[j]['y'] for j in RIGHT_EYE_TOP if j < len(lm)) / len(RIGHT_EYE_TOP)
+                        right_bottom_y = sum(lm[j]['y'] for j in RIGHT_EYE_BOTTOM if j < len(lm)) / len(RIGHT_EYE_BOTTOM)
+                        right_height = abs(right_top_y - right_bottom_y) * video_height
+                        
+                        visualization_data['blink_data']['eye_heights']['time'].append(ts)
+                        visualization_data['blink_data']['eye_heights']['left'].append(left_height)
+                        visualization_data['blink_data']['eye_heights']['right'].append(right_height)
     
     if os.path.exists(blink_path):
         with open(blink_path, 'r', encoding='utf-8') as f:
             blink_data = json.load(f)
             visualization_data['blink_data']['blink_rate'] = blink_data.get('blink_rate', 0.0)
+            visualization_data['blink_data']['blink_duration'] = blink_data.get('blink_duration', 0.0)
+            visualization_data['blink_data']['blink_amplitude'] = blink_data.get('blink_amplitude', 0.0)
     
     # Данные из признаков
     features = result.get('features', {})
     visualization_data['saccade_data']['saccade_frequency'] = features.get('saccade_frequency', 0.0)
+    visualization_data['saccade_data']['saccade_amplitude'] = features.get('saccade_amplitude', 0.0)
     visualization_data['fixation_data']['fixation_stability'] = features.get('fixation_stability', 0.0)
+    visualization_data['fixation_data']['fixation_duration'] = features.get('fixation_duration', 0.0)
     
     return jsonify(visualization_data), 200
 
