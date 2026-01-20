@@ -76,6 +76,19 @@ def analyze_video():
         return jsonify({'error': 'Неподдерживаемый формат файла'}), 400
     
     try:
+        # Получение информации об источнике из заголовков или формы
+        source = request.headers.get('X-Source', request.form.get('source', 'web'))
+        user_info = request.headers.get('X-User-Info', request.form.get('user_info', ''))
+        
+        # Если user_info передано как JSON строка, парсим его
+        if user_info:
+            try:
+                import json as json_lib
+                user_info = json_lib.loads(user_info) if isinstance(user_info, str) else user_info
+            except:
+                # Если не JSON, оставляем как строку
+                pass
+        
         # Сохранение файла
         filename = secure_filename(file.filename)
         filepath = os.path.join(UPLOAD_FOLDER, f"{uuid.uuid4()}_{filename}")
@@ -87,6 +100,8 @@ def analyze_video():
         # Добавление метаданных
         result['timestamp'] = datetime.now().isoformat()
         result['filename'] = filename
+        result['source'] = source  # 'telegram' или 'web'
+        result['user_info'] = user_info if user_info else None
         
         # Сохранение результата
         results = load_results()
@@ -108,6 +123,24 @@ def get_results():
     # Возвращаем только краткую информацию
     summary = []
     for i, result in enumerate(results):
+        source = result.get('source', 'web')
+        user_info = result.get('user_info', {})
+        
+        # Формируем отображаемое имя пользователя
+        if source == 'telegram' and user_info:
+            if isinstance(user_info, dict):
+                username = user_info.get('username', '')
+                first_name = user_info.get('first_name', '')
+                last_name = user_info.get('last_name', '')
+                user_id = user_info.get('id', '')
+                
+                # Формируем имя: username или first_name + last_name или user_id
+                display_name = username or f"{first_name} {last_name}".strip() or f"User {user_id}"
+            else:
+                display_name = str(user_info)
+        else:
+            display_name = 'Веб интерфейс'
+        
         summary.append({
             'index': i,
             'timestamp': result.get('timestamp', ''),
@@ -115,7 +148,9 @@ def get_results():
             'risk_level': result.get('risk_level', 'Unknown'),
             'risk_probability': result.get('risk_probability', 0.0),
             'emsi_score': result.get('emsi', {}).get('emsi_score', 0.0),
-            'emsi_range': result.get('emsi', {}).get('emsi_range', '')
+            'emsi_range': result.get('emsi', {}).get('emsi_range', ''),
+            'source': source,
+            'user_display': display_name
         })
     return jsonify(summary), 200
 
@@ -510,7 +545,7 @@ def export_csv():
     
     output = []
     output.append([
-        'Index', 'Timestamp', 'Filename', 'Risk Level', 'Risk Probability',
+        'Index', 'Timestamp', 'Filename', 'Source', 'User', 'Risk Level', 'Risk Probability',
         'EMSI Score', 'EMSI Range', 'Saccade Frequency', 'Blink Rate',
         'Fixation Stability', 'Asymmetry'
     ])
@@ -518,10 +553,28 @@ def export_csv():
     for i, result in enumerate(results):
         features = result.get('features', {})
         emsi = result.get('emsi', {})
+        source = result.get('source', 'web')
+        user_info = result.get('user_info', {})
+        
+        # Формируем отображаемое имя пользователя
+        if source == 'telegram' and user_info:
+            if isinstance(user_info, dict):
+                username = user_info.get('username', '')
+                first_name = user_info.get('first_name', '')
+                last_name = user_info.get('last_name', '')
+                user_id = user_info.get('id', '')
+                user_display = username or f"{first_name} {last_name}".strip() or f"User {user_id}"
+            else:
+                user_display = str(user_info)
+        else:
+            user_display = 'Веб интерфейс'
+        
         output.append([
             i,
             result.get('timestamp', ''),
             result.get('filename', ''),
+            source,
+            user_display,
             result.get('risk_level', ''),
             result.get('risk_probability', 0.0),
             emsi.get('emsi_score', 0.0),
@@ -575,6 +628,8 @@ def export_html():
             <tr>
                 <th>Index</th>
                 <th>Timestamp</th>
+                <th>Source</th>
+                <th>User</th>
                 <th>Risk Level</th>
                 <th>Risk Probability</th>
                 <th>EMSI Score</th>
@@ -584,10 +639,30 @@ def export_html():
     
     for i, result in enumerate(results):
         emsi = result.get('emsi', {})
+        source = result.get('source', 'web')
+        user_info = result.get('user_info', {})
+        
+        # Формируем отображаемое имя пользователя
+        if source == 'telegram' and user_info:
+            if isinstance(user_info, dict):
+                username = user_info.get('username', '')
+                first_name = user_info.get('first_name', '')
+                last_name = user_info.get('last_name', '')
+                user_id = user_info.get('id', '')
+                user_display = username or f"{first_name} {last_name}".strip() or f"User {user_id}"
+            else:
+                user_display = str(user_info)
+        else:
+            user_display = 'Веб интерфейс'
+        
+        source_display = '📱 Telegram' if source == 'telegram' else '🌐 Web'
+        
         html += f"""
             <tr>
                 <td>{i}</td>
                 <td>{result.get('timestamp', '')}</td>
+                <td>{source_display}</td>
+                <td>{user_display}</td>
                 <td>{result.get('risk_level', '')}</td>
                 <td>{result.get('risk_probability', 0.0):.2f}</td>
                 <td>{emsi.get('emsi_score', 0.0):.2f}</td>

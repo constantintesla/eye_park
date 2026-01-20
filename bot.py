@@ -157,10 +157,23 @@ async def process_video(message: Message, state: FSMContext):
         with open(temp_file_path, 'wb') as f:
             f.write(file_response.content)
         
-        # Отправка файла на API для анализа
+        # Подготовка информации о пользователе Telegram
+        user_info = {
+            'id': message.from_user.id,
+            'username': message.from_user.username or '',
+            'first_name': message.from_user.first_name or '',
+            'last_name': message.from_user.last_name or '',
+            'is_bot': message.from_user.is_bot
+        }
+        
+        # Отправка файла на API для анализа с информацией о пользователе
         with open(temp_file_path, 'rb') as f:
             files = {'file': (os.path.basename(temp_file_path), f, 'video/mp4')}
-            api_response = requests.post(f"{API_URL}/api/analyze", files=files)
+            headers = {
+                'X-Source': 'telegram',
+                'X-User-Info': json.dumps(user_info)
+            }
+            api_response = requests.post(f"{API_URL}/api/analyze", files=files, headers=headers)
         
         # Удаление временного файла
         os.remove(temp_file_path)

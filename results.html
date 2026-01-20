@@ -215,10 +215,15 @@
                     
                     const card = document.createElement('div');
                     card.className = 'result-card';
+                    const source = result.source || 'web';
+                    const sourceIcon = source === 'telegram' ? '📱' : '🌐';
+                    const userDisplay = result.user_display || (source === 'telegram' ? 'Telegram пользователь' : 'Веб интерфейс');
+                    
                     card.innerHTML = `
                         <h3>Результат #${actualIndex}</h3>
                         <div class="info"><strong>Файл:</strong> ${result.filename}</div>
                         <div class="info"><strong>Дата:</strong> ${date}</div>
+                        <div class="info"><strong>Источник:</strong> ${sourceIcon} ${userDisplay}</div>
                         <div class="info"><strong>EMSI:</strong> ${result.emsi_score.toFixed(2)}</div>
                         <div class="info"><strong>Диапазон:</strong> ${result.emsi_range}</div>
                         <div class="info"><strong>Вероятность:</strong> ${(result.risk_probability * 100).toFixed(1)}%</div>
