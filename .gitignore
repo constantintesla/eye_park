@@ -1,39 +1,166 @@
 # Виртуальное окружение
 venv/
 .venv/
+env/
+ENV/
+env.bak/
+venv.bak/
 
 # Кэш Python
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
 
 # Логи
 *.log
 logs/
+*.log.*
 
 # Артефакты IDE
 .vscode/
 .idea/
 *.iml
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.sublime-project
+*.sublime-workspace
 
 # Секреты и окружение
 .env
 .env.*
 !*.env.example
+*.key
+*.pem
+*.crt
 
 # Результаты и временные файлы
 results/
 results.json
 uploads/
 temp/
+tmp/
+*.tmp
+
+# Модели (большие файлы)
 models/
+*.model
+*.pkl
+*.h5
+*.weights
+*.onnx
+*.tflite
+
+# Видео и медиа файлы (большие)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.wmv
+*.flv
+*.webm
+*.m4v
+*.3gp
+*.mpg
+*.mpeg
+*.MOV
+*.MP4
+*.AVI
+
+# Изображения (опционально, если не нужны в репозитории)
+# *.jpg
+# *.jpeg
+# *.png
+# *.gif
+# *.bmp
+# *.tiff
+
+# Данные анализа (результаты)
+results/*.json
+results/**/*.json
+!results/.gitkeep
+
+# Большие JSON файлы с результатами
+results.json
 
 # Кеши инструментов
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
 
 # Docker
 *.pid
+.dockerignore
+
+# Временные файлы OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Backup файлы
+*.bak
+*.backup
+*.old
+*~
+.#*
+
+# Конфигурационные файлы (если содержат секреты)
+config.ini
+settings.ini
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# pyenv
+.python-version
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
