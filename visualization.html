@@ -85,6 +85,19 @@
             box-shadow: 0 5px 15px rgba(0,0,0,0.2);
         }
         
+        .videos-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        @media (max-width: 768px) {
+            .videos-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
         .loading {
             text-align: center;
             padding: 40px;
@@ -184,11 +197,23 @@
                 </div>
             </div>
             
-            <div class="video-container">
-                <h3>Исходное видео</h3>
-                <video id="videoPlayer" controls>
-                    Ваш браузер не поддерживает видео.
-                </video>
+            <div class="videos-grid">
+                <div class="video-container">
+                    <h3>Исходное видео</h3>
+                    <video id="videoPlayer" controls style="width: 100%;">
+                        Ваш браузер не поддерживает видео.
+                    </video>
+                </div>
+                
+                <div class="video-container">
+                    <h3>Видео с визуализацией</h3>
+                    <video id="visualizedVideoPlayer" controls style="width: 100%;">
+                        Ваш браузер не поддерживает видео.
+                    </video>
+                    <div id="videoStatus" style="margin-top: 10px; padding: 10px; background: #f0f0f0; border-radius: 5px; display: none;">
+                        <p style="margin: 0; color: #666;">Генерация видео с визуализацией...</p>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -219,6 +244,11 @@
                 // Загрузка видео
                 if (data.video_url) {
                     document.getElementById('videoPlayer').src = data.video_url;
+                }
+                
+                // Загрузка видео с визуализацией
+                if (data.visualized_video_url) {
+                    loadVisualizedVideo(data.visualized_video_url);
                 }
                 
                 document.getElementById('loading').style.display = 'none';
@@ -625,6 +655,46 @@
                     }
                 }
             });
+        }
+        
+        let retryCount = 0;
+        const maxRetries = 30; // Максимум 30 попыток (около 1 минуты)
+        
+        async function loadVisualizedVideo(videoUrl) {
+            const statusDiv = document.getElementById('videoStatus');
+            const videoPlayer = document.getElementById('visualizedVideoPlayer');
+            
+            if (retryCount >= maxRetries) {
+                statusDiv.style.display = 'block';
+                statusDiv.innerHTML = '<p style="margin: 0; color: #d32f2f;">Не удалось загрузить видео с визуализацией. Попробуйте обновить страницу.</p>';
+                return;
+            }
+            
+            try {
+                statusDiv.style.display = 'block';
+                statusDiv.innerHTML = `<p style="margin: 0; color: #666;">Генерация видео с визуализацией... (попытка ${retryCount + 1}/${maxRetries})</p>`;
+                
+                // Проверка доступности видео
+                const response = await fetch(videoUrl, { method: 'HEAD' });
+                if (response.ok) {
+                    videoPlayer.src = videoUrl;
+                    videoPlayer.onloadeddata = () => {
+                        statusDiv.style.display = 'none';
+                    };
+                    videoPlayer.onerror = () => {
+                        retryCount++;
+                        setTimeout(() => loadVisualizedVideo(videoUrl), 2000);
+                    };
+                } else {
+                    // Если видео еще не сгенерировано, попробуем через некоторое время
+                    retryCount++;
+                    setTimeout(() => loadVisualizedVideo(videoUrl), 2000);
+                }
+            } catch (error) {
+                // Видео еще не готово, попробуем позже
+                retryCount++;
+                setTimeout(() => loadVisualizedVideo(videoUrl), 2000);
+            }
         }
         
         // Загрузка при старте

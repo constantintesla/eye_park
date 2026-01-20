@@ -18,7 +18,17 @@ class ParkinsonEyeAnalyzer:
     """Главный класс для анализа видео и выявления симптомов неврологических расстройств"""
     
     def __init__(self):
-        self.video_processor = VideoProcessor()
+        # Конфигурация "Максимальная точность" - все методы предобработки включены
+        self.video_processor = VideoProcessor(
+            enable_preprocessing=True,
+            enable_face_stabilization=True,      # Высокий приоритет - стабилизация лица
+            enable_denoising=True,               # Высокий приоритет - шумоподавление
+            enable_temporal_filtering=True,      # Высокий приоритет - временная фильтрация
+            enable_eye_contrast=True,            # Средний приоритет - улучшение контраста глаз
+            enable_outlier_filtering=True,       # Средний приоритет - фильтрация выбросов
+            enable_sharpening=True,              # Низкий приоритет - улучшение резкости
+            enable_roi_upscaling=False           # Отключено для сохранения производительности
+        )
         self.feature_extractor = FeatureExtractor()
         self.symptom_analyzer = SymptomAnalyzer()
         

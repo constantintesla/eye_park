@@ -6,10 +6,11 @@ Flask API сервер для анализа движения глаз
 import os
 import json
 import csv
-from flask import Flask, request, jsonify, send_file, send_from_directory, render_template_string
+from flask import Flask, request, jsonify, send_file, send_from_directory, render_template_string, Response
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from parkinson_eye_analyzer import ParkinsonEyeAnalyzer
+from video_visualizer import VideoVisualizer
 from datetime import datetime
 import uuid
 
@@ -27,6 +28,7 @@ os.makedirs('results', exist_ok=True)
 
 # Инициализация анализатора
 analyzer = ParkinsonEyeAnalyzer()
+visualizer = VideoVisualizer()
 
 # Загрузка результатов
 def load_results():
@@ -184,7 +186,8 @@ def get_visualization_data(index):
         'blink_data': {'time': [], 'blink_events': [], 'blink_rate': 0.0, 'eye_heights': {'left': [], 'right': [], 'time': []}},
         'saccade_data': {'time': [], 'saccade_events': [], 'saccade_frequency': 0.0},
         'fixation_data': {'time': [], 'fixation_events': [], 'fixation_stability': 0.0},
-        'video_url': f'/api/video/{index}'
+        'video_url': f'/api/video/{index}',
+        'visualized_video_url': f'/api/video-visualized/{index}'
     }
     
     # Загрузка данных из файлов
@@ -273,6 +276,195 @@ def get_video(index):
             return send_file(video_path, mimetype='video/mp4')
     
     return jsonify({'error': 'Видео не найдено'}), 404
+
+@app.route('/api/video-visualized/<int:index>', methods=['GET', 'HEAD'])
+def get_visualized_video(index):
+    """Получение видео с визуализацией данных анализа"""
+    try:
+        results = load_results()
+        
+        # Логирование для отладки
+        print(f"[DEBUG] Запрос видео с визуализацией для индекса {index}")
+        print(f"[DEBUG] Всего результатов: {len(results)}")
+        
+        if index < 0 or index >= len(results):
+            print(f"[DEBUG] Индекс {index} вне диапазона [0, {len(results)})")
+            return jsonify({'error': f'Результат с индексом {index} не найден'}), 404
+        
+        result = results[index]
+        raw_data = result.get('raw_data', {})
+        data_dir = raw_data.get('data_directory', '')
+        
+        print(f"[DEBUG] Директория данных (относительный путь): {data_dir}")
+        
+        if not data_dir:
+            print("[DEBUG] Директория данных пуста")
+            return jsonify({'error': 'Директория данных не найдена в результате'}), 404
+        
+        # Преобразование относительного пути в абсолютный
+        if not os.path.isabs(data_dir):
+            data_dir = os.path.abspath(data_dir)
+        
+        print(f"[DEBUG] Директория данных (абсолютный путь): {data_dir}")
+        print(f"[DEBUG] Директория существует: {os.path.exists(data_dir)}")
+        
+        if not os.path.exists(data_dir):
+            print(f"[DEBUG] Директория не существует: {data_dir}")
+            return jsonify({'error': f'Директория данных не существует: {data_dir}'}), 404
+        
+        video_path = os.path.join(data_dir, 'original.mp4')
+        landmarks_path = os.path.join(data_dir, 'landmarks_data.json')
+        blink_path = os.path.join(data_dir, 'blink_analysis.json')
+        visualized_video_path = os.path.join(data_dir, 'visualized.mp4')
+        
+        print(f"[DEBUG] Пути к файлам:")
+        print(f"  - Видео: {video_path} (существует: {os.path.exists(video_path)})")
+        print(f"  - Landmarks: {landmarks_path} (существует: {os.path.exists(landmarks_path)})")
+        print(f"  - Blink: {blink_path} (существует: {os.path.exists(blink_path)})")
+        print(f"  - Visualized: {visualized_video_path} (существует: {os.path.exists(visualized_video_path)})")
+        
+        # Проверка существования необходимых файлов
+        if not os.path.exists(video_path):
+            print(f"[DEBUG] Исходное видео не найдено: {video_path}")
+            return jsonify({'error': f'Исходное видео не найдено: {video_path}'}), 404
+        
+        if not os.path.exists(landmarks_path):
+            print(f"[DEBUG] Данные landmarks не найдены: {landmarks_path}")
+            return jsonify({'error': f'Данные landmarks не найдены: {landmarks_path}'}), 404
+        
+        # Проверка существования видео (может быть .avi вместо .mp4)
+        avi_path = os.path.splitext(visualized_video_path)[0] + '.avi'
+        existing_video_path = None
+        
+        if os.path.exists(visualized_video_path):
+            existing_video_path = visualized_video_path
+        elif os.path.exists(avi_path):
+            existing_video_path = avi_path
+            print(f"[DEBUG] Найден AVI файл вместо MP4: {avi_path}")
+        
+        # Генерация видео с визуализацией, если его еще нет или оно повреждено
+        need_regenerate = False
+        if not existing_video_path:
+            print("[DEBUG] Видео с визуализацией не найдено, требуется генерация")
+            need_regenerate = True
+        else:
+            # Проверка размера файла (если меньше 1KB, файл поврежден)
+            try:
+                file_size = os.path.getsize(existing_video_path)
+                print(f"[DEBUG] Размер существующего файла: {file_size} байт")
+                if file_size < 1024:
+                    print("[DEBUG] Файл слишком мал, требуется пересоздание")
+                    need_regenerate = True
+                    try:
+                        os.remove(existing_video_path)
+                    except Exception as e:
+                        print(f"[DEBUG] Ошибка при удалении файла: {e}")
+            except Exception as e:
+                print(f"[DEBUG] Ошибка при проверке размера файла: {e}")
+                need_regenerate = True
+        
+        if need_regenerate:
+            print("[DEBUG] Начинается генерация видео с визуализацией...")
+            try:
+                # Используем imageio принудительно, так как OpenCV создает нерабочие файлы
+                success = visualizer.create_visualized_video(
+                    video_path, landmarks_path, visualized_video_path, blink_path,
+                    force_imageio=True
+                )
+                if not success:
+                    print("[DEBUG] Генерация видео не удалась")
+                    return jsonify({'error': 'Ошибка при создании видео с визуализацией'}), 500
+                print("[DEBUG] Видео успешно сгенерировано")
+            except Exception as e:
+                print(f"[DEBUG] Исключение при генерации видео: {e}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({'error': f'Ошибка при создании видео: {str(e)}'}), 500
+        
+        # Проверка существования видео (может быть .avi вместо .mp4)
+        video_ext = os.path.splitext(visualized_video_path)[1].lower()
+        avi_path = os.path.splitext(visualized_video_path)[0] + '.avi'
+        
+        final_video_path = None
+        video_mimetype = 'video/mp4'
+        
+        if os.path.exists(visualized_video_path):
+            final_video_path = visualized_video_path
+            video_mimetype = 'video/mp4'
+        elif os.path.exists(avi_path):
+            final_video_path = avi_path
+            video_mimetype = 'video/x-msvideo'  # AVI mimetype
+            print(f"[DEBUG] Используется AVI файл вместо MP4: {avi_path}")
+        
+        # Возврат видео
+        if final_video_path and os.path.exists(final_video_path):
+            print(f"[DEBUG] Отправка видео файла: {final_video_path} (тип: {video_mimetype})")
+            if request.method == 'HEAD':
+                # Для HEAD запроса возвращаем только заголовки
+                file_size = os.path.getsize(final_video_path)
+                response = Response()
+                response.headers['Content-Type'] = video_mimetype
+                response.headers['Content-Length'] = str(file_size)
+                return response
+            else:
+                return send_file(final_video_path, mimetype=video_mimetype)
+        else:
+            print(f"[DEBUG] Файл не существует после генерации: {visualized_video_path} или {avi_path}")
+            return jsonify({'error': 'Видео не найдено после генерации'}), 404
+    
+    except Exception as e:
+        print(f"[DEBUG] Неожиданная ошибка: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Внутренняя ошибка: {str(e)}'}), 500
+    
+    print(f"[DEBUG] Результат с индексом {index} не найден")
+    return jsonify({'error': 'Результат не найден'}), 404
+
+@app.route('/api/video-visualized/<int:index>/regenerate', methods=['POST'])
+def regenerate_visualized_video(index):
+    """Принудительное пересоздание видео с визуализацией"""
+    results = load_results()
+    if 0 <= index < len(results):
+        result = results[index]
+        raw_data = result.get('raw_data', {})
+        data_dir = raw_data.get('data_directory', '')
+        
+        video_path = os.path.join(data_dir, 'original.mp4')
+        landmarks_path = os.path.join(data_dir, 'landmarks_data.json')
+        blink_path = os.path.join(data_dir, 'blink_analysis.json')
+        visualized_video_path = os.path.join(data_dir, 'visualized.mp4')
+        
+        # Проверка существования необходимых файлов
+        if not os.path.exists(video_path):
+            return jsonify({'error': 'Исходное видео не найдено'}), 404
+        
+        if not os.path.exists(landmarks_path):
+            return jsonify({'error': 'Данные landmarks не найдены'}), 404
+        
+        # Удаление существующих файлов (MP4 и AVI), если они есть
+        visualized_video_avi = os.path.splitext(visualized_video_path)[0] + '.avi'
+        for existing_file in [visualized_video_path, visualized_video_avi]:
+            if os.path.exists(existing_file):
+                try:
+                    os.remove(existing_file)
+                    print(f"Удален старый файл: {existing_file}")
+                except Exception as e:
+                    print(f"Не удалось удалить файл {existing_file}: {e}")
+        
+        # Генерация нового видео с предобработкой
+        try:
+            success = visualizer.create_visualized_video(
+                video_path, landmarks_path, visualized_video_path, blink_path,
+                force_imageio=True  # Используем imageio для надежности
+            )
+            if not success:
+                return jsonify({'error': 'Ошибка при создании видео с визуализацией'}), 500
+            return jsonify({'success': True, 'message': 'Видео успешно пересоздано'}), 200
+        except Exception as e:
+            return jsonify({'error': f'Ошибка при создании видео: {str(e)}'}), 500
+    
+    return jsonify({'error': 'Результат не найден'}), 404
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():

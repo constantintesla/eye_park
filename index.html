@@ -239,6 +239,18 @@
             font-size: 14px;
             opacity: 0.9;
         }
+        
+        .file-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e3f2fd;
+            border-radius: 5px;
+            border-left: 4px solid #2196F3;
+        }
+        
+        .file-info p {
+            margin: 5px 0;
+        }
     </style>
 </head>
 <body>
@@ -260,6 +272,11 @@
             <button class="upload-btn" id="analyzeBtn" onclick="analyzeVideo()" disabled>
                 Анализировать
             </button>
+            <div id="fileInfo" style="display: none; margin-top: 20px; padding: 15px; background: #e3f2fd; border-radius: 5px; border-left: 4px solid #2196F3;">
+                <p style="margin: 0; font-weight: bold; color: #1976D2;">📁 Выбранный файл:</p>
+                <p style="margin: 5px 0 0 0; color: #424242;" id="fileName"></p>
+                <p style="margin: 5px 0 0 0; font-size: 12px; color: #757575;" id="fileSize"></p>
+            </div>
         </div>
         
         <div class="loading" id="loading">
@@ -627,7 +644,21 @@
         // Обработка загрузки файла
         document.getElementById('fileInput').addEventListener('change', function(e) {
             selectedFile = e.target.files[0];
-            document.getElementById('analyzeBtn').disabled = !selectedFile;
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const fileInfo = document.getElementById('fileInfo');
+            const fileName = document.getElementById('fileName');
+            const fileSize = document.getElementById('fileSize');
+            
+            if (selectedFile) {
+                analyzeBtn.disabled = false;
+                fileInfo.style.display = 'block';
+                fileName.textContent = selectedFile.name;
+                const sizeMB = (selectedFile.size / (1024 * 1024)).toFixed(2);
+                fileSize.textContent = `Размер: ${sizeMB} МБ`;
+            } else {
+                analyzeBtn.disabled = true;
+                fileInfo.style.display = 'none';
+            }
         });
         
         // Drag and drop
@@ -650,7 +681,16 @@
             if (files.length > 0 && files[0].type.startsWith('video/')) {
                 selectedFile = files[0];
                 document.getElementById('fileInput').files = files;
-                document.getElementById('analyzeBtn').disabled = false;
+                const analyzeBtn = document.getElementById('analyzeBtn');
+                const fileInfo = document.getElementById('fileInfo');
+                const fileName = document.getElementById('fileName');
+                const fileSize = document.getElementById('fileSize');
+                
+                analyzeBtn.disabled = false;
+                fileInfo.style.display = 'block';
+                fileName.textContent = selectedFile.name;
+                const sizeMB = (selectedFile.size / (1024 * 1024)).toFixed(2);
+                fileSize.textContent = `Размер: ${sizeMB} МБ`;
             }
         });
         
@@ -686,6 +726,7 @@
                 document.getElementById('analyzeBtn').disabled = false;
                 selectedFile = null;
                 document.getElementById('fileInput').value = '';
+                document.getElementById('fileInfo').style.display = 'none';
             }
         }
         

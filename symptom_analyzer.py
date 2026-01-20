@@ -85,6 +85,10 @@ class SymptomAnalyzer:
         2 - Умеренный
         3 - Тяжелый
         """
+        # Если признак отсутствует, возвращаем 0 (нет симптома)
+        if 'saccade_frequency' not in features:
+            return 0
+        
         saccade_freq = features.get('saccade_frequency', 0.0)
         threshold = self.THRESHOLDS['saccade_frequency']
         
@@ -101,6 +105,10 @@ class SymptomAnalyzer:
         """
         Оценка аномалий саккад (микросаккады, гипометрические саккады)
         """
+        # Если признак отсутствует, возвращаем 0 (нет симптома)
+        if 'saccade_amplitude' not in features:
+            return 0
+        
         saccade_amp = features.get('saccade_amplitude', 0.0)
         threshold = self.THRESHOLDS['saccade_amplitude']
         
@@ -117,6 +125,10 @@ class SymptomAnalyzer:
         """
         Оценка дефицита плавного слежения
         """
+        # Если признак отсутствует, возвращаем 0 (нет симптома)
+        if 'smooth_pursuit_ratio' not in features:
+            return 0
+        
         smooth_ratio = features.get('smooth_pursuit_ratio', 1.0)
         threshold = self.THRESHOLDS['smooth_pursuit_ratio']
         
@@ -133,6 +145,10 @@ class SymptomAnalyzer:
         """
         Оценка нестабильности фиксаций
         """
+        # Если признак отсутствует, возвращаем 0 (нет симптома)
+        if 'fixation_stability' not in features:
+            return 0
+        
         fixation_stab = features.get('fixation_stability', 0.0)
         threshold = self.THRESHOLDS['fixation_stability']
         
@@ -149,22 +165,27 @@ class SymptomAnalyzer:
         """
         Оценка аномалий моргания (редкое/частое/неполное)
         """
-        blink_rate = features.get('blink_rate', 0.0)
-        blink_duration = features.get('blink_duration', 0.0)
+        # Проверка наличия признаков - если их нет, возвращаем 0 (нет симптома)
+        if 'blink_rate' not in features and 'blink_duration' not in features:
+            return 0
+        
+        blink_rate = features.get('blink_rate', None)
+        blink_duration = features.get('blink_duration', None)
         incomplete_ratio = features.get('blink_incomplete_ratio', 0.0)
         
         score = 0
         
-        # Редкое или частое моргание
-        if blink_rate < self.THRESHOLDS['blink_rate']:
-            score += 2
-        elif blink_rate > self.THRESHOLDS['blink_rate_max']:
-            score += 2
-        elif blink_rate < self.THRESHOLDS['blink_rate'] * 1.2:
-            score += 1
+        # Редкое или частое моргание (только если blink_rate присутствует и не None)
+        if blink_rate is not None:
+            if blink_rate < self.THRESHOLDS['blink_rate']:
+                score += 2
+            elif blink_rate > self.THRESHOLDS['blink_rate_max']:
+                score += 2
+            elif blink_rate < self.THRESHOLDS['blink_rate'] * 1.2:
+                score += 1
         
-        # Длительное моргание
-        if blink_duration > self.THRESHOLDS['blink_duration']:
+        # Длительное моргание (только если blink_duration присутствует и не None)
+        if blink_duration is not None and blink_duration > self.THRESHOLDS['blink_duration']:
             score += 1
         
         # Неполные моргания
@@ -177,6 +198,10 @@ class SymptomAnalyzer:
         """
         Оценка птоза (опущение века)
         """
+        # Если признак отсутствует, возвращаем 0 (нет симптома)
+        if 'eyelid_droop' not in features:
+            return 0
+        
         eyelid_droop = features.get('eyelid_droop', 0.0)
         threshold = self.THRESHOLDS['eyelid_droop']
         
@@ -193,6 +218,10 @@ class SymptomAnalyzer:
         """
         Оценка асимметрии лица
         """
+        # Если признак отсутствует, возвращаем 0 (нет симптома)
+        if 'asymmetry_left_right' not in features:
+            return 0
+        
         asymmetry = features.get('asymmetry_left_right', 0.0)
         threshold = self.THRESHOLDS['asymmetry_left_right']
         
@@ -209,26 +238,33 @@ class SymptomAnalyzer:
         """
         Оценка гипомимии (снижение мимики)
         """
-        activity = features.get('periorbital_muscle_activity', 1.0)
-        expression_var = features.get('facial_expression_variation', 1.0)
-        eyebrow_range = features.get('eyebrow_movement_range', 1.0)
+        # Если основные признаки отсутствуют, возвращаем 0 (нет симптома)
+        if 'periorbital_muscle_activity' not in features and \
+           'facial_expression_variation' not in features and \
+           'eyebrow_movement_range' not in features:
+            return 0
+        
+        activity = features.get('periorbital_muscle_activity', None)
+        expression_var = features.get('facial_expression_variation', None)
+        eyebrow_range = features.get('eyebrow_movement_range', None)
         
         threshold = self.THRESHOLDS['periorbital_muscle_activity']
         
         score = 0
         
-        # Низкая активность окологлазных мышц
-        if activity < threshold:
-            score += 2
-        elif activity < threshold * 1.2:
+        # Низкая активность окологлазных мышц (только если признак присутствует)
+        if activity is not None:
+            if activity < threshold:
+                score += 2
+            elif activity < threshold * 1.2:
+                score += 1
+        
+        # Низкая вариация выражения (только если признак присутствует)
+        if expression_var is not None and expression_var < 0.01:
             score += 1
         
-        # Низкая вариация выражения
-        if expression_var < 0.01:
-            score += 1
-        
-        # Ограниченное движение бровей
-        if eyebrow_range < 0.01:
+        # Ограниченное движение бровей (только если признак присутствует)
+        if eyebrow_range is not None and eyebrow_range < 0.01:
             score += 1
         
         return min(score, 3)

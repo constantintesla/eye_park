@@ -14,6 +14,13 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
+# Импорт модуля предобработки
+try:
+    from video_preprocessor import VideoPreprocessor
+    PREPROCESSOR_AVAILABLE = True
+except ImportError:
+    PREPROCESSOR_AVAILABLE = False
+
 # Проверяем наличие старого API (для обратной совместимости)
 USE_OLD_API = hasattr(mp, 'solutions') if hasattr(mp, 'solutions') else False
 
@@ -21,7 +28,7 @@ USE_OLD_API = hasattr(mp, 'solutions') if hasattr(mp, 'solutions') else False
 class VideoProcessor:
     """Класс для обработки видео и извлечения ключевых точек лица"""
     
-    def __init__(self):
+    def __init__(self, enable_preprocessing: bool = True, **preprocessing_kwargs):
         if USE_OLD_API:
             # Используем старый API
             import mediapipe as mp
@@ -76,6 +83,15 @@ class VideoProcessor:
                     f"Не удалось инициализировать FaceLandmarker: {e}\n"
                     "Проверьте путь к модели."
                 )
+        
+        # Инициализация предобработчика (опционально)
+        self.enable_preprocessing = enable_preprocessing and PREPROCESSOR_AVAILABLE
+        if self.enable_preprocessing:
+            self.preprocessor = VideoPreprocessor(**preprocessing_kwargs)
+        else:
+            self.preprocessor = None
+            if enable_preprocessing and not PREPROCESSOR_AVAILABLE:
+                print("⚠️ Предобработка недоступна: модуль video_preprocessor не найден")
         
     def load_video(self, file_path: str) -> Tuple[cv2.VideoCapture, Dict]:
         """
@@ -203,31 +219,83 @@ class VideoProcessor:
         
         return normalized
     
-    def get_landmarks(self, video_path: str) -> Tuple[List[Dict], List[float]]:
+    def get_landmarks(self, video_path: str, use_preprocessing: Optional[bool] = None) -> Tuple[List[Dict], List[float]]:
         """
-        Получение ключевых точек лица для всего видео
+        Получение ключевых точек лица для всего видео с опциональной предобработкой
         
         Args:
             video_path: Путь к видео
+            use_preprocessing: Использовать ли предобработку (если None, используется self.enable_preprocessing)
             
         Returns:
             Tuple[List[landmarks_dict], List[timestamps]]
         """
+        if use_preprocessing is None:
+            use_preprocessing = self.enable_preprocessing
+        
         cap, metadata = self.load_video(video_path)
         landmarks_list = []
         timestamps = []
         
         original_fps = metadata['fps']
+        if original_fps <= 0:
+            original_fps = 30.0  # Значение по умолчанию
+        elif original_fps > 120:
+            # Ограничиваем максимальный FPS для стабильности
+            original_fps = 120.0
+        elif original_fps < 1:
+            # Ограничиваем минимальный FPS
+            original_fps = 1.0
+        
+        # Вычисляем минимальный шаг между временными метками в мс на основе FPS
+        # Для высокого FPS нужен меньший шаг, но не менее 1 мс
+        # Для низкого FPS шаг больше
+        frame_time_ms = 1000.0 / original_fps
+        # Используем целое число миллисекунд, но не менее 1
+        min_timestamp_step_ms = max(1, int(round(frame_time_ms)))
+        
+        # Дополнительная проверка: если шаг слишком маленький, увеличиваем его
+        if min_timestamp_step_ms < 1:
+            min_timestamp_step_ms = 1
+        
+        last_timestamp_ms = -1
         frame_idx = 0
+        
+        # Сброс референсного кадра для нового видео (если используется предобработка)
+        if use_preprocessing and self.preprocessor:
+            self.preprocessor.reset_reference()
         
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
             
-            timestamp = frame_idx / original_fps if original_fps > 0 else frame_idx / 30.0
-            timestamp_ms = int(timestamp * 1000)
-            landmarks = self.detect_face(frame, timestamp_ms)
+            # Вычисляем временную метку в секундах на основе индекса кадра и FPS
+            timestamp_sec = frame_idx / original_fps
+            
+            # Вычисляем временную метку в миллисекундах с более высокой точностью
+            # Используем умножение на frame_time_ms для более точного вычисления
+            timestamp_ms = int(frame_idx * frame_time_ms)
+            
+            # Гарантируем строгую монотонность: каждая следующая метка должна быть строго больше предыдущей
+            if timestamp_ms <= last_timestamp_ms:
+                timestamp_ms = last_timestamp_ms + min_timestamp_step_ms
+            
+            # Обновляем last_timestamp_ms перед использованием
+            last_timestamp_ms = timestamp_ms
+            
+            # Обновляем timestamp в секундах на основе монотонной метки в мс
+            timestamp = timestamp_ms / 1000.0
+            
+            # Предобработка кадра (если включена)
+            processed_frame = frame
+            if use_preprocessing and self.preprocessor:
+                # Первая обработка: шумоподавление, улучшение резкости, нормализация освещения
+                processed_frame = self.preprocessor.preprocess_frame(processed_frame)
+            
+            # Обнаружение лица (используем гарантированно монотонную временную метку)
+            # timestamp_ms уже гарантированно строго больше предыдущего значения
+            landmarks = self.detect_face(processed_frame, timestamp_ms)
             
             if landmarks:
                 # Конвертация landmarks в словарь
@@ -255,6 +323,16 @@ class VideoProcessor:
                             for landmark in landmarks
                         ]
                     }
+                
+                # Стабилизация лица (если включена и есть референс)
+                if use_preprocessing and self.preprocessor and self.preprocessor.enable_face_stabilization:
+                    processed_frame, landmarks_dict = self.preprocessor.stabilize_face(
+                        processed_frame, landmarks_dict
+                    )
+                    # Повторное обнаружение на стабилизированном кадре (опционально)
+                    # Можно закомментировать, если стабилизация landmarks достаточно
+                    # landmarks = self.detect_face(processed_frame, timestamp_ms)
+                
                 landmarks_list.append(landmarks_dict)
                 timestamps.append(timestamp)
             else:
@@ -265,6 +343,11 @@ class VideoProcessor:
             frame_idx += 1
         
         cap.release()
+        
+        # Временная фильтрация выбросов (если включена)
+        if use_preprocessing and self.preprocessor:
+            landmarks_list = self.preprocessor.filter_temporal_outliers(landmarks_list, timestamps)
+        
         return landmarks_list, timestamps
     
     def segment_eye_regions(self, landmarks: Dict) -> Dict:
