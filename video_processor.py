@@ -93,6 +93,11 @@ class VideoProcessor:
             if enable_preprocessing and not PREPROCESSOR_AVAILABLE:
                 print("⚠️ Предобработка недоступна: модуль video_preprocessor не найден")
         
+        # Глобальная временная метка для нового API MediaPipe:
+        # модель требует строго монотонно возрастающие timestamp_ms
+        # на протяжении всего времени жизни экземпляра
+        self._global_timestamp_ms = 0
+        
     def load_video(self, file_path: str) -> Tuple[cv2.VideoCapture, Dict]:
         """
         Загрузка видео с ресемплированием до стандартного разрешения
@@ -258,7 +263,6 @@ class VideoProcessor:
         if min_timestamp_step_ms < 1:
             min_timestamp_step_ms = 1
         
-        last_timestamp_ms = -1
         frame_idx = 0
         
         # Сброс референсного кадра для нового видео (если используется предобработка)
@@ -270,19 +274,16 @@ class VideoProcessor:
             if not ret:
                 break
             
-            # Вычисляем временную метку в секундах на основе индекса кадра и FPS
-            timestamp_sec = frame_idx / original_fps
-            
             # Вычисляем временную метку в миллисекундах с более высокой точностью
             # Используем умножение на frame_time_ms для более точного вычисления
-            timestamp_ms = int(frame_idx * frame_time_ms)
+            local_timestamp_ms = int(frame_idx * frame_time_ms)
             
-            # Гарантируем строгую монотонность: каждая следующая метка должна быть строго больше предыдущей
-            if timestamp_ms <= last_timestamp_ms:
-                timestamp_ms = last_timestamp_ms + min_timestamp_step_ms
+            # Преобразуем локальную метку кадра в глобальную, строго монотонно возрастающую
+            if local_timestamp_ms <= self._global_timestamp_ms:
+                local_timestamp_ms = self._global_timestamp_ms + min_timestamp_step_ms
             
-            # Обновляем last_timestamp_ms перед использованием
-            last_timestamp_ms = timestamp_ms
+            timestamp_ms = local_timestamp_ms
+            self._global_timestamp_ms = timestamp_ms
             
             # Обновляем timestamp в секундах на основе монотонной метки в мс
             timestamp = timestamp_ms / 1000.0
