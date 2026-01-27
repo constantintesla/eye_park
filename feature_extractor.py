@@ -29,9 +29,12 @@ class FeatureExtractor:
         self.LEFT_EYEBROW = [107, 55, 65, 52, 53, 46]
         self.RIGHT_EYEBROW = [336, 296, 334, 293, 300, 276]
         
-        # Пороги для обнаружения событий
-        self.SACCADE_VELOCITY_THRESHOLD = 30.0  # градусов/сек
-        self.FIXATION_VELOCITY_THRESHOLD = 5.0  # градусов/сек
+        # Пороги для обнаружения событий в НОРМАЛИЗОВАННЫХ координатах
+        # После калибровки/нормализации координаты взгляда лежат в диапазоне [-1; 1] по каждой оси.
+        # Поэтому скорости/амплитуды измеряются не в градусах, а в "долях доступного диапазона" в секунду.
+        # Значения подобраны эмпирически и могут уточняться по мере накопления данных.
+        self.SACCADE_VELOCITY_THRESHOLD = 0.3  # нормализованные единицы/сек
+        self.FIXATION_VELOCITY_THRESHOLD = 0.05  # нормализованные единицы/сек
         self.BLINK_EYE_CLOSURE_THRESHOLD = 0.3  # доля от нормальной высоты глаза
     
     def extract_all_features(self, landmarks_list: List[Dict], timestamps: List[float], 
@@ -59,11 +62,22 @@ class FeatureExtractor:
             raise ValueError("Недостаточно кадров с обнаруженным лицом для анализа")
         
         # Извлечение позиций глаз
-        eye_positions = self._extract_eye_positions(valid_landmarks, video_metadata)
+        eye_positions_pixels = self._extract_eye_positions(valid_landmarks, video_metadata)
+
+        # Калибровка и нормализация взгляда
+        # На данном этапе, если явная калибровка не передана "снаружи",
+        # мы оцениваем границы движения глаз по наблюдаемому диапазону позиций.
+        calibration = self._compute_calibration_from_positions(
+            eye_positions_pixels['average']
+        )
+        normalized_positions = self._normalize_positions(
+            eye_positions_pixels['average'],
+            calibration
+        )
         
         # Извлечение признаков движения глаз
         eye_movement_features = self._extract_eye_movement_features(
-            eye_positions, valid_timestamps
+            normalized_positions, valid_timestamps
         )
         
         # Извлечение признаков моргания
@@ -117,19 +131,82 @@ class FeatureExtractor:
             'right': right_eye_positions,
             'average': avg_positions
         }
+
+    def _compute_calibration_from_positions(
+        self, positions: List[Tuple[float, float]]
+    ) -> Dict[str, float]:
+        """
+        Вычисление границ движения глаз по наблюдаемым позициям.
+
+        Это fallback-калибровка: если явная калибровка (от протокола
+        «влево/вправо/вверх/вниз») не передана, мы используем минимальные
+        и максимальные наблюдаемые значения как приближение к экстремумам.
+        """
+        if not positions:
+            return {
+                'center_x': 0.0,
+                'center_y': 0.0,
+                'half_range_x': 1e-6,
+                'half_range_y': 1e-6,
+            }
+
+        xs = [p[0] for p in positions]
+        ys = [p[1] for p in positions]
+
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+
+        center_x = (min_x + max_x) / 2.0
+        center_y = (min_y + max_y) / 2.0
+
+        half_range_x = max(abs(max_x - center_x), 1e-6)
+        half_range_y = max(abs(max_y - center_y), 1e-6)
+
+        return {
+            'center_x': center_x,
+            'center_y': center_y,
+            'half_range_x': half_range_x,
+            'half_range_y': half_range_y,
+        }
+
+    def _normalize_positions(
+        self,
+        positions: List[Tuple[float, float]],
+        calibration: Dict[str, float],
+    ) -> List[Tuple[float, float]]:
+        """
+        Нормализация позиций взгляда в диапазон [-1; 1] по каждой оси.
+
+        После нормализации:
+        - -1 по X соответствует максимально левому положению;
+        - +1 по X — максимально правому;
+        - -1 по Y — максимально нижнему;
+        - +1 по Y — максимально верхнему.
+        """
+        if not positions:
+            return []
+
+        cx = calibration.get('center_x', 0.0)
+        cy = calibration.get('center_y', 0.0)
+        rx = calibration.get('half_range_x', 1e-6)
+        ry = calibration.get('half_range_y', 1e-6)
+
+        normalized = []
+        for x, y in positions:
+            nx = (x - cx) / rx
+            ny = (y - cy) / ry
+            # Ограничиваем до [-1; 1], чтобы избавиться от выбросов
+            nx = max(-1.0, min(1.0, nx))
+            ny = max(-1.0, min(1.0, ny))
+            normalized.append((nx, ny))
+
+        return normalized
     
-    def _extract_eye_movement_features(self, eye_positions: Dict, 
+    def _extract_eye_movement_features(self, positions: List[Tuple[float, float]], 
                                       timestamps: List[float]) -> Dict:
         """Извлечение признаков движения глаз"""
-        positions = eye_positions['average']
-        
         if len(positions) < 2:
             return self._get_default_eye_movement_features()
-        
-        # Конвертация пикселей в градусы (приблизительно)
-        # Предполагаем, что расстояние до камеры ~60 см, ширина лица ~15 см
-        # 1 пиксель ≈ 0.1 градуса (приблизительно)
-        pixel_to_degree = 0.1
         
         # Вычисление скоростей движения
         velocities = []
@@ -138,7 +215,8 @@ class FeatureExtractor:
             if dt > 0:
                 dx = positions[i][0] - positions[i-1][0]
                 dy = positions[i][1] - positions[i-1][1]
-                distance = math.sqrt(dx**2 + dy**2) * pixel_to_degree
+                # Дистанция в НОРМАЛИЗОВАННЫХ координатах (доли диапазона), а не в пикселях/градусах
+                distance = math.sqrt(dx**2 + dy**2)
                 velocity = distance / dt
                 velocities.append(velocity)
         
@@ -172,8 +250,8 @@ class FeatureExtractor:
         if not velocities:
             return saccades
         
-        # Порог скорости для саккады
-        velocity_threshold = self.SACCADE_VELOCITY_THRESHOLD * 0.1  # конвертация в пиксели/сек
+        # Порог скорости для саккады в НОРМАЛИЗОВАННЫХ единицах
+        velocity_threshold = self.SACCADE_VELOCITY_THRESHOLD
         
         in_saccade = False
         saccade_start_idx = 0
@@ -190,7 +268,8 @@ class FeatureExtractor:
                     end_pos = positions[i]
                     dx = end_pos[0] - start_pos[0]
                     dy = end_pos[1] - start_pos[1]
-                    amplitude = math.sqrt(dx**2 + dy**2) * 0.1  # конвертация в градусы
+                    # Амплитуда в нормализованных единицах (доля от полного диапазона)
+                    amplitude = math.sqrt(dx**2 + dy**2)
                     
                     saccades.append({
                         'start': timestamps[saccade_start_idx],
@@ -209,8 +288,8 @@ class FeatureExtractor:
         if not velocities:
             return fixations
         
-        # Порог скорости для фиксации
-        velocity_threshold = self.FIXATION_VELOCITY_THRESHOLD * 0.1
+        # Порог скорости для фиксации в НОРМАЛИЗОВАННЫХ единицах
+        velocity_threshold = self.FIXATION_VELOCITY_THRESHOLD
         
         in_fixation = False
         fixation_start_idx = 0
@@ -264,9 +343,9 @@ class FeatureExtractor:
         
         std_x = np.std(x_coords) if x_coords else 0.0
         std_y = np.std(y_coords) if y_coords else 0.0
-        
-        # Конвертация в градусы
-        stability = math.sqrt(std_x**2 + std_y**2) * 0.1
+
+        # Стабильность в нормализованных единицах (доля диапазона)
+        stability = math.sqrt(std_x**2 + std_y**2)
         
         return stability
     
@@ -298,9 +377,9 @@ class FeatureExtractor:
         
         coords = [p[axis] for p in positions]
         range_val = max(coords) - min(coords)
-        
-        # Конвертация в градусы
-        return range_val * 0.1
+
+        # Диапазон в нормализованных единицах (доля диапазона движения по оси)
+        return float(range_val)
     
     def _extract_blink_features(self, landmarks_list: List[Dict], 
                                timestamps: List[float]) -> Dict:
