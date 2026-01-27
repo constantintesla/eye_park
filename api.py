@@ -118,14 +118,19 @@ def analyze_video():
 
 @app.route('/api/results', methods=['GET'])
 def get_results():
-    """Получение всех результатов"""
+    """Получение результатов (всех или отфильтрованных по пользователю)"""
     results = load_results()
-    # Возвращаем только краткую информацию
+
+    # Параметры фильтрации
+    filter_source = request.args.get('source')
+    filter_user_id = request.args.get('user_id')
+    limit = request.args.get('limit', type=int)
+
     summary = []
     for i, result in enumerate(results):
         source = result.get('source', 'web')
         user_info = result.get('user_info', {})
-        
+
         # Формируем отображаемое имя пользователя
         if source == 'telegram' and user_info:
             if isinstance(user_info, dict):
@@ -133,25 +138,49 @@ def get_results():
                 first_name = user_info.get('first_name', '')
                 last_name = user_info.get('last_name', '')
                 user_id = user_info.get('id', '')
-                
+
                 # Формируем имя: username или first_name + last_name или user_id
                 display_name = username or f"{first_name} {last_name}".strip() or f"User {user_id}"
             else:
                 display_name = str(user_info)
+                user_id = None
         else:
             display_name = 'Веб интерфейс'
-        
+            user_id = None
+
+        # Фильтрация по источнику и пользователю, если указаны
+        if filter_source and source != filter_source:
+            continue
+        if filter_user_id:
+            try:
+                uid_val = user_info.get('id') if isinstance(user_info, dict) else None
+            except Exception:
+                uid_val = None
+            if str(uid_val) != str(filter_user_id):
+                continue
+
+        ts = result.get('timestamp', '')
+        # Человекочитаемая метка: пользователь + дата
+        display_label = f"{display_name} — {ts}" if ts else display_name
+
         summary.append({
             'index': i,
-            'timestamp': result.get('timestamp', ''),
+            'timestamp': ts,
             'filename': result.get('filename', ''),
             'risk_level': result.get('risk_level', 'Unknown'),
             'risk_probability': result.get('risk_probability', 0.0),
             'emsi_score': result.get('emsi', {}).get('emsi_score', 0.0),
             'emsi_range': result.get('emsi', {}).get('emsi_range', ''),
             'source': source,
-            'user_display': display_name
+            'user_display': display_name,
+            'user_id': user_id,
+            'display_label': display_label
         })
+
+    # Если задан limit, берем последние N записей (по времени добавления)
+    if limit is not None and limit > 0:
+        summary = summary[-limit:]
+
     return jsonify(summary), 200
 
 @app.route('/api/results', methods=['POST'])

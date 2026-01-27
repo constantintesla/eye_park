@@ -9,7 +9,7 @@ import requests
 import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -68,6 +68,20 @@ VIDEO_INSTRUCTIONS = """
 """
 
 
+# Тексты кнопок
+BTN_ANALYZE = "📊 Анализ видео"
+BTN_HISTORY = "🧾 Моя история"
+
+
+main_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text=BTN_ANALYZE)],
+        [KeyboardButton(text=BTN_HISTORY)],
+    ],
+    resize_keyboard=True
+)
+
+
 @dp.message(Command("start"))
 async def cmd_start(message: Message):
     """Обработка команды /start"""
@@ -76,7 +90,9 @@ async def cmd_start(message: Message):
             "👋 Добро пожаловать в систему анализа движения глаз!\n\n"
             "Эта система помогает выявить симптомы неврологических расстройств "
             "на основе анализа движения глаз, моргания и мимики.\n\n"
-            "Используйте команду /analyze для начала анализа видео."
+            "Нажмите «📊 Анализ видео» чтобы загрузить новое видео "
+            "или «🧾 Моя история» чтобы посмотреть свои результаты.",
+            reply_markup=main_keyboard
         )
     except Exception as e:
         logger.error(f"Ошибка в команде /start: {e}", exc_info=True)
@@ -85,48 +101,79 @@ async def cmd_start(message: Message):
 
 @dp.message(Command("analyze"))
 async def cmd_analyze(message: Message, state: FSMContext):
-    """Обработка команды /analyze"""
-    try:
-        await message.answer(VIDEO_INSTRUCTIONS)
-        await state.set_state(AnalysisStates.waiting_for_video)
-    except Exception as e:
-        logger.error(f"Ошибка в команде /analyze: {e}", exc_info=True)
-        await message.answer("Произошла ошибка. Попробуйте позже.")
+    """Обработка команды /analyze (fallback)"""
+    await start_analysis_flow(message, state)
 
 
 @dp.message(Command("history"))
 async def cmd_history(message: Message):
-    """Обработка команды /history - история результатов"""
+    """Обработка команды /history (fallback)"""
+    await show_user_history(message)
+
+
+@dp.message(lambda m: m.text == BTN_ANALYZE)
+async def btn_analyze(message: Message, state: FSMContext):
+    """Обработка кнопки 'Анализ видео'"""
+    await start_analysis_flow(message, state)
+
+
+@dp.message(lambda m: m.text == BTN_HISTORY)
+async def btn_history(message: Message):
+    """Обработка кнопки 'Моя история'"""
+    await show_user_history(message)
+
+
+async def start_analysis_flow(message: Message, state: FSMContext):
+    """Запуск сценария анализа видео"""
     try:
-        response = requests.get(f"{API_URL}/api/results", timeout=10)
+        await message.answer(VIDEO_INSTRUCTIONS, reply_markup=main_keyboard)
+        await state.set_state(AnalysisStates.waiting_for_video)
+    except Exception as e:
+        logger.error(f"Ошибка в сценарии анализа: {e}", exc_info=True)
+        await message.answer("Произошла ошибка. Попробуйте позже.")
+
+
+async def show_user_history(message: Message):
+    """Показ истории результатов только для текущего пользователя"""
+    try:
+        user_id = message.from_user.id
+        # Запрашиваем у API все результаты этого пользователя без ограничения по количеству
+        params = {
+            "source": "telegram",
+            "user_id": str(user_id),
+        }
+        response = requests.get(f"{API_URL}/api/results", params=params, timeout=10)
         if response.status_code == 200:
             results = response.json()
             if not results:
-                await message.answer("История результатов пуста.")
+                await message.answer("История ваших результатов пока пуста.")
                 return
-            
-            # Показываем последние 5 результатов
-            recent_results = results[-5:]
-            history_text = "📊 Последние результаты анализа:\n\n"
-            
-            for result in reversed(recent_results):
+
+            history_text = "📊 Ваши последние результаты анализа:\n\n"
+
+            for result in results:
+                ts = result.get("timestamp", "N/A")
+                risk_level = result.get("risk_level", "N/A")
+                risk_prob = result.get("risk_probability", 0.0) * 100
+                emsi_score = result.get("emsi_score", 0.0)
+                emsi_range = result.get("emsi_range", "N/A")
+
                 history_text += (
-                    f"📅 {result.get('timestamp', 'N/A')}\n"
-                    f"📁 {result.get('filename', 'N/A')}\n"
-                    f"⚠️ Уровень риска: {result.get('risk_level', 'N/A')}\n"
-                    f"📈 Вероятность: {result.get('risk_probability', 0.0)*100:.1f}%\n"
-                    f"📊 EMSI: {result.get('emsi_score', 0.0):.2f} ({result.get('emsi_range', 'N/A')})\n"
+                    f"📅 {ts}\n"
+                    f"⚠️ Уровень риска: {risk_level}\n"
+                    f"📈 Вероятность: {risk_prob:.1f}%\n"
+                    f"📊 EMSI: {emsi_score:.2f} ({emsi_range})\n"
                     f"─────────────────────\n"
                 )
-            
+
             await message.answer(history_text)
         else:
-            await message.answer("Ошибка при получении истории результатов.")
+            await message.answer("Ошибка при получении вашей истории результатов.")
     except requests.exceptions.RequestException as e:
         logger.error(f"Ошибка подключения к API: {e}")
         await message.answer("Не удалось подключиться к API серверу. Убедитесь, что сервер запущен.")
     except Exception as e:
-        logger.error(f"Ошибка в команде /history: {e}", exc_info=True)
+        logger.error(f"Ошибка при получении истории пользователя: {e}", exc_info=True)
         await message.answer(f"Ошибка: {str(e)}")
 
 
@@ -137,7 +184,8 @@ async def process_video(message: Message, state: FSMContext):
     if not message.video and not message.document and not message.video_note:
         await message.answer(
             "Пожалуйста, загрузите видео файл или кружочек.\n"
-            "Используйте команду /analyze для повторной попытки."
+            "Нажмите «📊 Анализ видео» для повторной попытки.",
+            reply_markup=main_keyboard
         )
         await state.clear()
         return
@@ -274,10 +322,10 @@ def format_analysis_report(result: dict) -> str:
 async def handle_other_messages(message: Message):
     """Обработка других сообщений"""
     await message.answer(
-        "Используйте команды:\n"
-        "/start - Начать работу\n"
-        "/analyze - Начать анализ видео\n"
-        "/history - Просмотр истории результатов"
+        "Используйте кнопки меню ниже:\n"
+        "• «📊 Анализ видео» — загрузить новое видео\n"
+        "• «🧾 Моя история» — посмотреть ваши результаты",
+        reply_markup=main_keyboard
     )
 
 

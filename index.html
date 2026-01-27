@@ -97,6 +97,32 @@
             cursor: pointer;
         }
         
+        .filename-cell {
+            max-width: 260px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .source-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+        
+        .source-badge.telegram {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .source-badge.web {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+        
         .risk-badge {
             padding: 5px 10px;
             border-radius: 15px;
@@ -314,7 +340,9 @@
                 <tr>
                     <th>#</th>
                     <th>Дата/Время</th>
-                    <th>Файл</th>
+                    <th>Пользователь / дата</th>
+                    <th>Источник</th>
+                    <th>Пользователь</th>
                     <th>Уровень риска</th>
                     <th>Вероятность</th>
                     <th>EMSI</th>
@@ -378,11 +406,16 @@
                     const actualIndex = results.length - 1 - index;
                     
                     const riskClass = `risk-${result.risk_level.toLowerCase()}`;
+                    const sourceLabel = result.source === 'telegram' ? '📱 TG' : '🌐 Web';
+                    const sourceClass = result.source === 'telegram' ? 'telegram' : 'web';
+                    const displayLabel = result.display_label || `${result.user_display || ''} — ${new Date(result.timestamp).toLocaleString('ru-RU')}`;
                     
                     row.innerHTML = `
                         <td>${actualIndex}</td>
                         <td>${new Date(result.timestamp).toLocaleString('ru-RU')}</td>
-                        <td>${result.filename}</td>
+                        <td class="filename-cell" title="${result.filename}">${displayLabel}</td>
+                        <td><span class="source-badge ${sourceClass}">${sourceLabel}</span></td>
+                        <td>${result.user_display}</td>
                         <td><span class="risk-badge ${riskClass}">${result.risk_level}</span></td>
                         <td>${(result.risk_probability * 100).toFixed(1)}%</td>
                         <td>${result.emsi_score.toFixed(2)}</td>
@@ -457,9 +490,26 @@
                     </div>
                 `;
                 
+                // Источник и пользователь
+                let userDisplay = 'Веб интерфейс';
+                if (result.source === 'telegram' && result.user_info) {
+                    if (typeof result.user_info === 'object') {
+                        const username = result.user_info.username || '';
+                        const firstName = result.user_info.first_name || '';
+                        const lastName = result.user_info.last_name || '';
+                        const userId = result.user_info.id || '';
+                        userDisplay = username || `${firstName} ${lastName}`.trim() || `User ${userId}`;
+                    } else {
+                        userDisplay = String(result.user_info);
+                    }
+                }
+                const sourceDisplay = result.source === 'telegram' ? '📱 Telegram' : '🌐 Web';
+
                 content.innerHTML = `
                     <h2>Детальный отчет #${index}</h2>
                     <p><strong>Файл:</strong> ${result.filename}</p>
+                    <p><strong>Пользователь:</strong> ${userDisplay}</p>
+                    <p><strong>Источник:</strong> ${sourceDisplay}</p>
                     <p><strong>Дата:</strong> ${new Date(result.timestamp).toLocaleString('ru-RU')}</p>
                     <hr>
                     <h3>EMSI (Eye Movement Severity Index): ${result.emsi.emsi_score.toFixed(2)}</h3>

@@ -67,6 +67,10 @@ class VideoVisualizer:
             )
         else:
             self.preprocessor = None
+        
+        # История высот глаз для адаптивного порога моргания
+        self._eye_heights_history = []
+        self._max_eye_history = 60  # ~2 секунды при 30 FPS
     
     def create_visualized_video(self, video_path: str, landmarks_path: str, 
                                output_path: str, blink_data_path: Optional[str] = None,
@@ -335,8 +339,10 @@ class VideoVisualizer:
                     landmarks_idx += 1
                 
                 # Применение предобработки к кадру (если включено)
-                if self.apply_preprocessing and self.preprocessor and current_landmarks:
-                    frame = self.preprocessor.preprocess_frame(frame, current_landmarks)
+                # Применяем только глобальную предобработку без локального усиления области глаз,
+                # чтобы зоны контраста не «съезжали» относительно реальных глаз
+                if self.apply_preprocessing and self.preprocessor:
+                    frame = self.preprocessor.preprocess_frame(frame, None)
                 
                 # Отрисовка визуализации
                 if current_landmarks and 'landmarks' in current_landmarks:
@@ -653,8 +659,24 @@ class VideoVisualizer:
         right_bottom_y = sum(lm[j]['y'] for j in self.RIGHT_EYE_BOTTOM if j < len(lm)) / len(self.RIGHT_EYE_BOTTOM)
         right_height = abs(right_top_y - right_bottom_y)
         
-        # Порог для определения моргания (30% от нормальной высоты)
-        blink_threshold = 0.3
+        # Текущая средняя высота (нормализованная, 0..1)
+        avg_height = (left_height + right_height) / 2.0
+        
+        # Обновляем историю высот для адаптивного порога
+        if avg_height > 0:
+            self._eye_heights_history.append(avg_height)
+            if len(self._eye_heights_history) > self._max_eye_history:
+                self._eye_heights_history.pop(0)
+        
+        # Если недостаточно истории, не показываем индикатор (стабилизация базовой высоты)
+        if len(self._eye_heights_history) < 5:
+            return frame
+        
+        # Нормальная высота глаза как медиана истории
+        normal_height = np.median(self._eye_heights_history)
+        
+        # Порог для определения моргания: 30% от нормальной высоты, как в FeatureExtractor
+        blink_threshold = normal_height * 0.3
         
         # Индикатор моргания
         if left_height < blink_threshold or right_height < blink_threshold:
@@ -756,8 +778,9 @@ class VideoVisualizer:
                     landmarks_idx += 1
                 
                 # Применение предобработки к кадру (если включено)
-                if self.apply_preprocessing and self.preprocessor and current_landmarks:
-                    frame = self.preprocessor.preprocess_frame(frame, current_landmarks)
+                # Только глобальная предобработка, без локального усиления вокруг глаз
+                if self.apply_preprocessing and self.preprocessor:
+                    frame = self.preprocessor.preprocess_frame(frame, None)
                 
                 # Отрисовка визуализации
                 if current_landmarks and 'landmarks' in current_landmarks:
