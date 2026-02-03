@@ -6,7 +6,6 @@
 import cv2
 import numpy as np
 from typing import List, Tuple, Dict, Optional
-import json
 import os
 
 # Используем новый API MediaPipe 0.10+
@@ -163,67 +162,6 @@ class VideoProcessor:
                 return detection_result.face_landmarks[0]
             return None
     
-    def extract_frames(self, video_path: str, fps_target: int = 30) -> Tuple[List[np.ndarray], List[float]]:
-        """
-        Извлечение кадров с целевым FPS
-        
-        Args:
-            video_path: Путь к видео
-            fps_target: Целевой FPS
-            
-        Returns:
-            Tuple[List[frames], List[timestamps]]
-        """
-        cap, metadata = self.load_video(video_path)
-        original_fps = metadata['fps']
-        
-        frames = []
-        timestamps = []
-        
-        frame_interval = max(1, int(original_fps / fps_target)) if original_fps > 0 else 1
-        frame_idx = 0
-        
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            if frame_idx % frame_interval == 0:
-                frames.append(frame)
-                timestamps.append(frame_idx / original_fps if original_fps > 0 else frame_idx / 30.0)
-            
-            frame_idx += 1
-        
-        cap.release()
-        return frames, timestamps
-    
-    def normalize_lighting(self, frames: List[np.ndarray]) -> List[np.ndarray]:
-        """
-        Нормализация освещения в кадрах
-        
-        Args:
-            frames: Список кадров
-            
-        Returns:
-            Список нормализованных кадров
-        """
-        normalized = []
-        for frame in frames:
-            # Конвертация в LAB цветовое пространство
-            lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
-            l, a, b = cv2.split(lab)
-            
-            # Применение CLAHE (Contrast Limited Adaptive Histogram Equalization)
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            l = clahe.apply(l)
-            
-            # Объединение каналов
-            lab = cv2.merge([l, a, b])
-            normalized_frame = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-            normalized.append(normalized_frame)
-        
-        return normalized
-    
     def get_landmarks(self, video_path: str, use_preprocessing: Optional[bool] = None) -> Tuple[List[Dict], List[float]]:
         """
         Получение ключевых точек лица для всего видео с опциональной предобработкой
@@ -351,84 +289,3 @@ class VideoProcessor:
         
         return landmarks_list, timestamps
     
-    def segment_eye_regions(self, landmarks: Dict) -> Dict:
-        """
-        Сегментация областей глаз на основе ключевых точек
-        
-        Args:
-            landmarks: Словарь с ключевыми точками
-            
-        Returns:
-            Словарь с координатами областей глаз
-        """
-        if not landmarks or 'landmarks' not in landmarks:
-            return None
-        
-        # Индексы ключевых точек для глаз (MediaPipe Face Mesh)
-        # Левый глаз
-        LEFT_EYE_INDICES = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
-        # Правый глаз
-        RIGHT_EYE_INDICES = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
-        
-        # Верхние и нижние веки
-        LEFT_EYE_TOP = [159, 160, 161, 158]
-        LEFT_EYE_BOTTOM = [145, 153, 154, 155]
-        RIGHT_EYE_TOP = [386, 387, 388, 385]
-        RIGHT_EYE_BOTTOM = [374, 380, 381, 382]
-        
-        lm = landmarks['landmarks']
-        
-        def get_eye_center(eye_indices):
-            x_coords = [lm[i]['x'] for i in eye_indices]
-            y_coords = [lm[i]['y'] for i in eye_indices]
-            return np.mean(x_coords), np.mean(y_coords)
-        
-        def get_eye_width(eye_indices):
-            x_coords = [lm[i]['x'] for i in eye_indices]
-            return max(x_coords) - min(x_coords)
-        
-        def get_eye_height(top_indices, bottom_indices):
-            top_y = np.mean([lm[i]['y'] for i in top_indices])
-            bottom_y = np.mean([lm[i]['y'] for i in bottom_indices])
-            return abs(top_y - bottom_y)
-        
-        left_center = get_eye_center(LEFT_EYE_INDICES)
-        right_center = get_eye_center(RIGHT_EYE_INDICES)
-        
-        left_width = get_eye_width(LEFT_EYE_INDICES)
-        left_height = get_eye_height(LEFT_EYE_TOP, LEFT_EYE_BOTTOM)
-        
-        right_width = get_eye_width(RIGHT_EYE_INDICES)
-        right_height = get_eye_height(RIGHT_EYE_TOP, RIGHT_EYE_BOTTOM)
-        
-        return {
-            'left_eye': {
-                'center': left_center,
-                'width': left_width,
-                'height': left_height,
-                'indices': LEFT_EYE_INDICES
-            },
-            'right_eye': {
-                'center': right_center,
-                'width': right_width,
-                'height': right_height,
-                'indices': RIGHT_EYE_INDICES
-            },
-            'left_eyelid': {
-                'top': [lm[i] for i in LEFT_EYE_TOP],
-                'bottom': [lm[i] for i in LEFT_EYE_BOTTOM]
-            },
-            'right_eyelid': {
-                'top': [lm[i] for i in RIGHT_EYE_TOP],
-                'bottom': [lm[i] for i in RIGHT_EYE_BOTTOM]
-            }
-        }
-    
-    def save_landmarks(self, landmarks_list: List[Dict], timestamps: List[float], output_path: str):
-        """Сохранение ключевых точек в JSON"""
-        data = {
-            'landmarks': landmarks_list,
-            'timestamps': timestamps
-        }
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)

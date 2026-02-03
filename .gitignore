@@ -88,7 +88,7 @@ models/
 results/*.json
 results/**/*.json
 !results/.gitkeep
-
+Science/
 # Большие JSON файлы с результатами
 results.json
 

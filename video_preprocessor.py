@@ -20,7 +20,6 @@ class VideoPreprocessor:
                  enable_denoising: bool = True,
                  enable_sharpening: bool = False,
                  enable_temporal_filtering: bool = True,
-                 enable_roi_upscaling: bool = False,
                  enable_eye_contrast: bool = True,
                  enable_outlier_filtering: bool = True):
         """
@@ -31,7 +30,6 @@ class VideoPreprocessor:
             enable_denoising: Включить шумоподавление
             enable_sharpening: Включить улучшение резкости
             enable_temporal_filtering: Включить временную фильтрацию
-            enable_roi_upscaling: Включить ROI-обрезку и увеличение
             enable_eye_contrast: Включить улучшение контраста области глаз
             enable_outlier_filtering: Включить фильтрацию выбросов
         """
@@ -39,7 +37,6 @@ class VideoPreprocessor:
         self.enable_denoising = enable_denoising
         self.enable_sharpening = enable_sharpening
         self.enable_temporal_filtering = enable_temporal_filtering
-        self.enable_roi_upscaling = enable_roi_upscaling
         self.enable_eye_contrast = enable_eye_contrast
         self.enable_outlier_filtering = enable_outlier_filtering
         
@@ -440,63 +437,3 @@ class VideoPreprocessor:
         self.reference_frame = None
         self.landmark_history = {}
     
-    def get_roi_crop(self, frame: np.ndarray, landmarks: Dict, 
-                    padding: float = 0.3) -> Tuple[np.ndarray, Dict]:
-        """
-        Обрезка области лица с увеличением разрешения
-        
-        Args:
-            frame: Входной кадр
-            landmarks: Ключевые точки лица
-            padding: Отступ вокруг лица (доля от размера)
-            
-        Returns:
-            Tuple[cropped_frame, adjusted_landmarks]
-        """
-        if not self.enable_roi_upscaling:
-            return frame, landmarks
-        
-        if not landmarks or 'landmarks' not in landmarks:
-            return frame, landmarks
-        
-        h, w = frame.shape[:2]
-        lm = landmarks['landmarks']
-        
-        # Определение bounding box лица
-        x_coords = [lm[i]['x'] * w for i in range(min(468, len(lm)))]
-        y_coords = [lm[i]['y'] * h for i in range(min(468, len(lm)))]
-        
-        if not x_coords or not y_coords:
-            return frame, landmarks
-        
-        x_min = max(0, int(min(x_coords) - padding * w))
-        y_min = max(0, int(min(y_coords) - padding * h))
-        x_max = min(w, int(max(x_coords) + padding * w))
-        y_max = min(h, int(max(y_coords) + padding * h))
-        
-        # Обрезка
-        cropped = frame[y_min:y_max, x_min:x_max]
-        
-        if cropped.size == 0:
-            return frame, landmarks
-        
-        # Увеличение разрешения (если маленькое)
-        crop_h, crop_w = cropped.shape[:2]
-        if crop_h < 360 or crop_w < 360:
-            scale_factor = max(360.0 / crop_h, 360.0 / crop_w)
-            new_w = int(crop_w * scale_factor)
-            new_h = int(crop_h * scale_factor)
-            cropped = cv2.resize(cropped, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
-        
-        # Корректировка landmarks
-        new_h, new_w = cropped.shape[:2]
-        adjusted_landmarks = {'landmarks': []}
-        
-        for lm_point in lm:
-            adjusted_landmarks['landmarks'].append({
-                'x': (lm_point['x'] * w - x_min) / new_w,
-                'y': (lm_point['y'] * h - y_min) / new_h,
-                'z': lm_point.get('z', 0.0)
-            })
-        
-        return cropped, adjusted_landmarks

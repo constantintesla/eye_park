@@ -61,7 +61,6 @@ class VideoVisualizer:
                 enable_denoising=True,
                 enable_sharpening=False,  # Не применяем резкость к визуализации
                 enable_temporal_filtering=False,  # Временная фильтрация уже применена
-                enable_roi_upscaling=False,
                 enable_eye_contrast=True,
                 enable_outlier_filtering=False  # Выбросы уже отфильтрованы
             )

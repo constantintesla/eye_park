@@ -26,8 +26,7 @@ class ParkinsonEyeAnalyzer:
             enable_temporal_filtering=True,      # Высокий приоритет - временная фильтрация
             enable_eye_contrast=True,            # Средний приоритет - улучшение контраста глаз
             enable_outlier_filtering=True,       # Средний приоритет - фильтрация выбросов
-            enable_sharpening=True,              # Низкий приоритет - улучшение резкости
-            enable_roi_upscaling=False           # Отключено для сохранения производительности
+            enable_sharpening=True               # Низкий приоритет - улучшение резкости
         )
         self.feature_extractor = FeatureExtractor()
         self.symptom_analyzer = SymptomAnalyzer()
