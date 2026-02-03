@@ -42,8 +42,6 @@ eye_park/
 │       ├── landmarks_data.json  # Данные о ключевых точках лица
 │       ├── eye_tracking_data.json  # Данные о движении глаз
 │       └── blink_analysis.json  # Данные о моргании
-├── docker-compose.yml    # Docker конфигурация
-├── Dockerfile            # Docker образ
 ├── README.md             # Документация
 └── .env.example          # Пример переменных окружения
 ```
@@ -83,14 +81,6 @@ API_URL=http://localhost:5000
 API_PORT=5000
 FLASK_ENV=development
 DEBUG=True
-```
-
-### Docker установка
-
-1. Создайте файл `.env` с вашими настройками
-2. Запустите через docker-compose:
-```bash
-docker-compose up -d
 ```
 
 ## Использование
